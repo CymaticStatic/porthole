@@ -1,9 +1,8 @@
 # Porthole: feature spec (v1)
 
 Status: **spec, approved for build by Ben on 2026-10-12** ("Just go ahead and give me a feature
-spec ... I'll run the build in another window"). Two choices are marked **ASSUMED** below: they are
-the recommendations Ben was given and had not yet answered. Ask him before changing them; build
-them as written otherwise.
+spec ... I'll run the build in another window"). Talk mode approach A and the summary-only read-aloud
+were confirmed by Ben the same day ("2. both"), and he approved the private GitHub repo ("3. yes").
 
 ## 1. What it is, in one paragraph
 
@@ -99,9 +98,9 @@ session). It replaces Moshi for this job: no subscription, no use limit, no thir
 - The server also appends every delivered message to `~/.local/state/porthole/sent.jsonl`
   (mode 0600) so nothing is lost even if the phone is.
 
-### 4.5 Talk mode (voice back-and-forth) — **ASSUMED: approach A**
-Ben's requirement: "as long as ... I can still talk back and forth to Thalamus." Approach A
-(recommended, not yet confirmed by Ben): Porthole's own voice loop, no OpenAI realtime go-between.
+### 4.5 Talk mode (voice back-and-forth) — approach A (confirmed by Ben 2026-10-12)
+Ben's requirement: "as long as ... I can still talk back and forth to Thalamus." Approach A:
+Porthole's own voice loop, no OpenAI realtime go-between.
 - A mic button on the chat view. Tap to start, tap to stop (and optional auto-stop after ~2 s of
   silence). The page records with `getUserMedia`/`MediaRecorder`, converts to **16 kHz mono WAV** in
   the browser, and POSTs it to the desktop.
@@ -112,7 +111,7 @@ Ben's requirement: "as long as ... I can still talk back and forth to Thalamus."
   `~/.local/state/porthole/audio/`) if transcription fails, so the words can be recovered.
 - The text appears in the message box first; in talk mode it **auto-sends** after transcription
   (toggle in settings), using 4.4.
-- **Reply read aloud** — **ASSUMED: summary only.** When the session's next assistant reply finishes
+- **Reply read aloud** — summary only (confirmed by Ben 2026-10-12). When the session's next assistant reply finishes
   (seen in the transcript), the phone speaks it with the browser's built-in `speechSynthesis`: the
   first paragraph plus the numbered titles under `## Needs your decision`. A "Read all" button speaks
   the whole reply minus tables and code. A tap on the speaker stops it.
@@ -175,8 +174,9 @@ iPhone-specific features; a native Android app.
 - One real omp test is allowed: a throwaway `omp --no-extensions -e <live-inbox.ts> --no-session
   --model haiku` session in a temp folder (this is how the extension was proven, ~9 cents).
 - Kill only exact PIDs you started. No `pkill`/`killall`.
-- No secrets in the repo. Commit and push your own branch after each checked step; no remote exists
-  yet: ask Ben before creating one (suggest a private repo under CymaticStatic).
+- No secrets in the repo. Commit and push your own branch after each checked step to the private
+  remote `origin` (https://github.com/CymaticStatic/porthole, approved by Ben 2026-10-12). Never
+  change the repo's visibility; merge into `main` only when Ben asks, after a conflict check.
 
 ## 8. Acceptance (each needs evidence: command output, test, or screenshot from the headless browser)
 
@@ -201,8 +201,8 @@ iPhone-specific features; a native Android app.
 
 ## 9. Open decisions for Ben (do not block the build on these)
 
-1. Confirm talk mode **approach A** (Porthole's own voice loop) over B (pipe the phone into omp's
-   live voice). Built as A.
-2. Confirm **read-aloud length**: summary + decision titles (built), whole reply, or nothing.
-3. Name: "Porthole" is a working name.
-4. Private GitHub repo for `repo/` (needs his OK).
+1. Name: "Porthole" is a working name.
+
+Settled on 2026-10-12: talk mode approach A (over B, piping the phone into omp's OpenAI live
+voice); read-aloud = summary + decision titles with a "Read all" button; private GitHub repo
+`CymaticStatic/porthole`.
