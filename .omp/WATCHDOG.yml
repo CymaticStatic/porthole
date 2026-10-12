@@ -1,0 +1,11 @@
+instructions: |
+  porthole is a private phone web app that reads and types into Ben's live agent sessions.
+  - Flag any test or command that types into, attaches to, detaches, resizes or restarts a REAL session
+    (Thalamus, herdr helpers, any tmux session not on a scratch socket like `tmux -L porthole-test`).
+  - Flag any change that can lose a message: a draft cleared before the server confirmed delivery,
+    or an audio file deleted before its transcription succeeded.
+  - Flag the server binding anything other than 127.0.0.1, or any request path that skips the
+    Tailscale identity check in docs/SPEC.md section 5.3.
+  - Flag starting omp live voice, OpenAI realtime, or adb screenshot loops during testing.
+  - Flag any secret (token, password, ntfy topic) committed to the repo, and any message text written
+    to access.log.
