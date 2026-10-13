@@ -24,3 +24,20 @@ install -m 0644 omp-extension/live-inbox.ts /home/cymatic/.omp/agent/extensions/
 Once installed it loads into every new omp session (Thalamus included, next time it
 starts). Sessions started before the install have no inbox; hostd then types with tmux
 instead (route 2).
+
+## porthole-events.ts
+
+Tells hostd what an omp session is doing (SPEC 4.6): session start and end, a working turn, a
+finished turn, and every `ask` question (opened and closed, with its options). Each event is one
+short connection to the Unix socket `$XDG_RUNTIME_DIR/porthole/events.sock` (override with
+`PORTHOLE_EVENTS_SOCKET`). If hostd is down or slow the event is dropped; nothing here can block,
+slow or crash omp (acceptance P2.9).
+
+Install (only after its one throwaway-omp run passed, SPEC 7; `server/test/live/events-once.ts`):
+
+```bash
+install -D -m 0644 omp-extension/porthole-events.ts /home/cymatic/.omp/agent/extensions/porthole-events.ts
+```
+
+Once installed it loads into every new omp session (Thalamus included, next time it starts);
+running sessions are unchanged. `GET /v1/doctor` reports whether the installed copy matches this one.

@@ -7,14 +7,43 @@ import path from "node:path";
 import { defaultConfig, loadConfig, writeInitialConfig } from "./config";
 import { createHostd, type Hostd } from "./hostd";
 import { chatFeature } from "./features/chat";
+import { configFeature } from "./features/config";
+import { diffFeature } from "./features/diff";
+import { doctorFeature } from "./features/doctor";
+import { inboxFeature } from "./features/inbox";
 import { machineFeature } from "./features/machine";
+import { previewFeature } from "./features/preview";
 import { ptyFeature } from "./features/pty";
 import { sendFeature } from "./features/send";
 import { sessionsFeature } from "./features/sessions";
+import { shortcutsFeature } from "./features/shortcuts";
+import { uploadsFeature } from "./features/uploads";
+import { usageFeature } from "./features/usage";
+import { voiceFeature } from "./features/voice";
+import { webFeature } from "./features/web";
 import type { FeatureFactory } from "./router";
 import { VERSION } from "./version";
 
-export const FEATURES: FeatureFactory[] = [machineFeature, sessionsFeature, chatFeature, sendFeature, ptyFeature];
+/** `<repo>/web`, next to `server/`: the folder `webFeature` serves (a missing folder serves nothing). */
+const WEB_DIR = path.join(import.meta.dir, "..", "..", "web");
+
+export const FEATURES: FeatureFactory[] = [
+  machineFeature,
+  sessionsFeature,
+  chatFeature,
+  sendFeature,
+  ptyFeature,
+  inboxFeature,
+  uploadsFeature,
+  diffFeature,
+  previewFeature,
+  usageFeature,
+  voiceFeature,
+  shortcutsFeature,
+  configFeature(configPath(process.env)),
+  doctorFeature,
+  webFeature(WEB_DIR),
+];
 
 /** `PORTHOLE_CONFIG` when set, else `<HOME>/.config/porthole/hostd.json`. */
 export function configPath(env: Record<string, string | undefined> = process.env): string {
