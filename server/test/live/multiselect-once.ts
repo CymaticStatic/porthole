@@ -4,7 +4,8 @@
 // cancel", rows were "[ ] red, [ ] green, [ ] blue, [ ] yellow, [ ] Other (type your own)" with a ">" cursor, and Up x6 stayed
 // on the first row (no wrap). That run's phase 1 pressed Enter expecting it to tick (an older reading of omp's code), so it sent
 // the empty selection and the question ended "Cancelled". Space and Enter-with-ticks were therefore never exercised; this file
-// is the corrected script for a second run.
+// is the corrected script. RUN 2 (2026-10-13, spent, PASS): Space ticked and a second Space unticked; hostd's sequence for
+// options 1 and 3 ticked green and yellow and omp answered "green, yellow". Do not run it again without Ben's OK.
 // Phase 1 presses keys one by one (never Enter) and prints the dialog rows: Space ticks and unticks, and whether the cursor
 // moves. Phase 2 answers the same dialog through hostd (POST /v1/inbox/:id/answer with two option indexes), so the
 // product's own key sequence is what gets verified. Phase 1 leaves nothing ticked.
