@@ -14,9 +14,12 @@ export function inboxDir(inboxRoot: string, pid: number): string {
 }
 
 export function stageInbox(dir: string, clientMsgId: string, text: string): Staged {
+  const final = path.join(dir, clientMsgId + ".msg");
+  // A rename over an unconsumed file would silently replace that message.
+  if (existsSync(final)) throw new Error("inbox file already exists: " + final);
   const part = path.join(dir, "." + clientMsgId + ".msg.part");
   writeFileSync(part, text, { mode: 0o600 });
-  return { part, final: path.join(dir, clientMsgId + ".msg") };
+  return { part, final };
 }
 
 export function commitInbox(s: Staged): void {

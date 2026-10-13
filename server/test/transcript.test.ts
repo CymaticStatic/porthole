@@ -38,6 +38,17 @@ test("pages walk backwards by cursor; after returns only newer lines", () => {
   expect(after.end).toBe(readFileSync(file).length);
 });
 
+test("readAfter skips a line longer than the read window instead of returning nothing", () => {
+  const mk = (id: string, text: string) => JSON.stringify({ type: "message", id, parentId: null, timestamp: "2026-10-13T09:00:00.000Z", message: { role: "user", content: [{ type: "text", text }] } }) + "\n";
+  const big = mk("u1", "x".repeat(600 * 1024));
+  const file = path.join(s.root, "big.jsonl");
+  writeFileSync(file, big + mk("u2", "after the big line"));
+  const after = readAfter(file, 0);
+  expect(after.items.map((i) => i.text)).toEqual(["after the big line"]);
+  expect(after.start).toBe(Buffer.byteLength(big));
+  expect(after.end).toBe(readFileSync(file).length);
+});
+
 test("the follower appends complete lines only and resets when the file shrinks", async () => {
   const file = s.transcript("chat-basic.jsonl");
   const got: ChatItem[] = [];

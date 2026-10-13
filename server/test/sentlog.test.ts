@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 import { CLIENT_MSG_ID, commitInbox, inboxDir, stageInbox, waitTaken } from "../src/deliver/inbox";
 import { SentLog } from "../src/deliver/sentlog";
@@ -45,4 +45,26 @@ test("write-then-rename, and taken means the extension removed the file", async 
   commitInbox(again);
   expect(await waitTaken(again.final, 200, 20)).toBe(false);
   expect(existsSync(again.final)).toBe(true);
+});
+
+test("stageInbox refuses to replace an unconsumed message", () => {
+  const dir = inboxDir(s.inboxRoot, 4243);
+  mkdirSync(dir, { mode: 0o700 });
+  commitInbox(stageInbox(dir, "m1", "first"));
+  expect(() => stageInbox(dir, "m1", "second")).toThrow(/already exists/);
+  expect(readFileSync(path.join(dir, "m1.msg"), "utf8")).toBe("first");
+  expect(readdirSync(dir)).toEqual(["m1.msg"]);
+});
+
+test("a torn last line is terminated so the next record survives a restart", () => {
+  const a = new SentLog(s.stateDir);
+  a.append({ ...base, clientMsgId: "m1", status: "pending" });
+  appendFileSync(a.file, '{"at":"x","clientMsgId":"torn"');
+  const b = new SentLog(s.stateDir);
+  expect(readFileSync(b.file, "utf8").endsWith("\n")).toBe(true);
+  b.append({ ...base, clientMsgId: "m2", status: "pending" });
+  const c = new SentLog(s.stateDir);
+  expect(c.latest("m1")?.status).toBe("pending");
+  expect(c.latest("m2")?.status).toBe("pending");
+  expect(c.latest("torn")).toBeUndefined();
 });

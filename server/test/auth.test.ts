@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { AccessLog } from "../src/auth/accesslog";
 import { Auth } from "../src/auth/auth";
@@ -34,26 +34,30 @@ test("Ben's phone through tailscale serve is allowed", async () => {
   expect(await auth.check(req("GET", "/v1/machine", fromPhone))).toEqual({ ok: true, device: "bencell", via: "tailscale" });
 });
 
-test("each rule refuses on its own", async () => {
-  const cases: Array<[string, Request]> = [
-    ["no X-Porthole", req("GET", "/v1/machine", { ...fromPhone, "X-Porthole": "" })],
-    ["wrong login header", req("GET", "/v1/machine", { ...fromPhone, "Tailscale-User-Login": "someone@example.com" })],
-    ["node not on the allowlist", req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.2" })],
-    ["node owned by another login", req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.3" })],
-    ["unknown address", req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.9" })],
-    ["spoofed first X-Forwarded-For entry", req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.1, 100.64.0.2" })],
-    ["no identity at all", req("GET", "/v1/machine", { "X-Porthole": "1" })],
-    ["POST without Origin", req("POST", "/v1/sessions/x/send", fromPhone)],
-    ["POST from a foreign site", req("POST", "/v1/sessions/x/send", { ...fromPhone, Origin: "https://evil.example" })],
-    ["POST from the preview port", req("POST", "/v1/sessions/x/send", { ...fromPhone, Origin: CONTROL + ":8443" })],
-    ["GET with a foreign Origin", req("GET", "/v1/machine", { ...fromPhone, Origin: "https://evil.example" })],
-    ["WebSocket without Origin", req("GET", "/v1/events", { ...fromPhone, ...upgrade })],
-    ["WebSocket from the preview port", req("GET", "/v1/events", { ...fromPhone, ...upgrade, Origin: CONTROL + ":8443" })],
-    ["wrong local token", req("GET", "/v1/machine", { "X-Porthole": "1", "X-Porthole-Local": "guess" })],
+test("each rule refuses on its own, for its own reason", async () => {
+  const cases: Array<[string, Request, string]> = [
+    ["no X-Porthole", req("GET", "/v1/machine", { ...fromPhone, "X-Porthole": "" }), "missing the X-Porthole"],
+    ["wrong login header", req("GET", "/v1/machine", { ...fromPhone, "Tailscale-User-Login": "someone@example.com" }), "Tailscale login someone@example.com is not allowed"],
+    ["node not on the allowlist", req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.2" }), "device benacer is not on the allowlist"],
+    ["node owned by another login", req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.3" }), "belongs to another Tailscale login"],
+    ["unknown address", req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.9" }), "does not know the device at 100.64.0.9"],
+    ["spoofed first X-Forwarded-For entry", req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.1, 100.64.0.2" }), "device benacer is not on the allowlist"],
+    ["no identity at all", req("GET", "/v1/machine", { "X-Porthole": "1" }), "Tailscale login (none) is not allowed"],
+    ["POST without Origin", req("POST", "/v1/sessions/x/send", fromPhone), "needs the control-room Origin"],
+    ["POST from a foreign site", req("POST", "/v1/sessions/x/send", { ...fromPhone, Origin: "https://evil.example" }), "origin https://evil.example is not allowed"],
+    ["POST from the preview port", req("POST", "/v1/sessions/x/send", { ...fromPhone, Origin: CONTROL + ":8443" }), "origin " + CONTROL + ":8443 is not allowed"],
+    ["GET with a foreign Origin", req("GET", "/v1/machine", { ...fromPhone, Origin: "https://evil.example" }), "origin https://evil.example is not allowed"],
+    ["WebSocket without Origin", req("GET", "/v1/events", { ...fromPhone, ...upgrade }), "needs the control-room Origin"],
+    ["WebSocket from the preview port", req("GET", "/v1/events", { ...fromPhone, ...upgrade, Origin: CONTROL + ":8443" }), "origin " + CONTROL + ":8443 is not allowed"],
+    ["OPTIONS without Origin", req("OPTIONS", "/v1/sessions/x/send", { ...fromPhone, "X-Porthole": "" }), "needs the control-room Origin"],
+    ["OPTIONS with a bad Origin", req("OPTIONS", "/v1/sessions/x/send", { ...fromPhone, "X-Porthole": "", Origin: "https://evil.example" }), "origin https://evil.example is not allowed"],
+    ["wrong local token", req("GET", "/v1/machine", { "X-Porthole": "1", "X-Porthole-Local": "guess" }), "wrong local token"],
+    ["local token without X-Porthole", req("GET", "/v1/machine", { "X-Porthole-Local": "local-secret" }), "missing the X-Porthole"],
   ];
-  for (const [name, r] of cases) {
+  for (const [name, r, reason] of cases) {
     const v = await auth.check(r);
     expect([name, v.ok]).toEqual([name, false]);
+    expect([name, v.ok === false ? v.reason : ""]).toEqual([name, expect.stringContaining(reason)]);
   }
 });
 
@@ -67,10 +71,29 @@ test("exact origins, preflight and the local token pass", async () => {
   expect(auth.corsHeaders(req("GET", "/v1/machine", { Origin: "https://evil.example" }))).toEqual({});
 });
 
-test("whois answers are cached", async () => {
+test("whois answers are cached, and concurrent lookups of one address share one process", async () => {
   await auth.check(req("GET", "/v1/machine", fromPhone));
   await auth.check(req("GET", "/v1/machine", fromPhone));
   expect(s.fakeCalls("tailscale").filter((c) => c[0] === "whois").length).toBe(1);
+  const fresh = new Whois(s.config().bin.tailscale);
+  const answers = await Promise.all(Array.from({ length: 8 }, () => fresh.lookup("100.64.0.2")));
+  for (const a of answers) expect(a).toEqual({ node: "benacer", login: BEN });
+  expect(s.fakeCalls("tailscale").filter((c) => c[0] === "whois" && c[c.length - 1] === "100.64.0.2").length).toBe(1);
+});
+
+test("an empty or damaged local token file is replaced and never matches an empty header", async () => {
+  const file = localTokenPath(s.runtimeDir);
+  ensureLocalToken(s.runtimeDir);
+  writeFileSync(file, "");
+  const token = ensureLocalToken(s.runtimeDir);
+  expect(token).toMatch(/^[0-9a-f]{64}$/);
+  expect(readFileSync(file, "utf8").trim()).toBe(token);
+  expect(statSync(file).mode & 0o777).toBe(0o600);
+  const a = new Auth(s.config(), new Whois(s.config().bin.tailscale), token);
+  const v = await a.check(req("GET", "/v1/machine", { "X-Porthole": "1", "X-Porthole-Local": "" }));
+  expect(v).toEqual({ ok: false, reason: "wrong local token" });
+  writeFileSync(file, "not-a-token\n");
+  expect(ensureLocalToken(s.runtimeDir)).toMatch(/^[0-9a-f]{64}$/);
 });
 
 test("local token and access log are owner-only; the log never holds message text", () => {

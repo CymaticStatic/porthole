@@ -1,6 +1,6 @@
 // ~/.local/state/porthole/sent.jsonl (0600): every status change of every send, with its text (SPEC 4.5).
 
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 export type SendStatus = "delivered" | "pending" | "refused" | "failed";
@@ -38,7 +38,23 @@ export class SentLog {
     } else {
       writeFileSync(this.file, "", { mode: 0o600 });
     }
+    this.terminateTornLine();
     chmodSync(this.file, 0o600);
+  }
+
+  /** A crash mid-append can leave the file without a final newline; the next record would glue onto it. */
+  private terminateTornLine(): void {
+    const fd = openSync(this.file, "r");
+    try {
+      const size = fstatSync(fd).size;
+      if (size === 0) return;
+      const last = Buffer.alloc(1);
+      readSync(fd, last, 0, 1, size - 1);
+      if (last[0] === 0x0a) return;
+    } finally {
+      closeSync(fd);
+    }
+    appendFileSync(this.file, "\n");
   }
 
   latest(id: string): SendRecord | undefined {

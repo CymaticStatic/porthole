@@ -92,8 +92,11 @@ export function readAfter(file: string, after: number): Page {
     // Skip the line that starts at `after` (the client already has it).
     let from = 0;
     if (after >= 0) {
-      const nl = readRange(fd, after, Math.min(size, after + CHUNK)).indexOf(0x0a);
-      from = nl >= 0 ? after + nl + 1 : size;
+      from = size;
+      for (let pos = after; pos < size; pos += CHUNK) {
+        const nl = readRange(fd, pos, Math.min(size, pos + CHUNK)).indexOf(0x0a);
+        if (nl >= 0) { from = pos + nl + 1; break; }
+      }
     }
     const { items, end } = forward(fd, from, lastBoundary(fd, size));
     return { items, start: from, end, hasOlder: from > 0 };
