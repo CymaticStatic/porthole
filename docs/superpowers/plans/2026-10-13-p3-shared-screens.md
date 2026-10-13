@@ -69,13 +69,15 @@ System font stack only (SPEC 6): `system-ui, -apple-system, "Segoe UI", Roboto, 
 
 | Token | Size | Line height | Use |
 |---|---|---|---|
-| `--fs-1` | 0.694rem | 1.4 | badge numbers only |
-| `--fs-2` | 0.833rem | 1.45 | captions, timestamps, status labels |
+| `--fs-1` | 0.75rem (12 px) | 1.4 | **`.meta` only**: timestamps and repeated counts that are never the only copy of a fact (the one place `readable()` allows 12 px) |
+| `--fs-2` | 0.875rem (14 px) | 1.45 | badges, captions, status labels (the 14 px floor of `readable()`) |
 | `--fs-3` | 1rem | 1.55 | body, bubbles, list rows, buttons |
 | `--fs-4` | 1.2rem | 1.35 | screen titles, question text |
 | `--fs-5` | 1.44rem | 1.25 | Markdown `#`/`##` inside bubbles |
 
 Weights 400 and 600 only. Numbers in usage and badges use `font-variant-numeric: tabular-nums`. Line length in bubbles ≤ 72ch.
+
+The two small steps leave the 1.2 ratio on purpose so nothing but `.meta` falls under 14 px at the default text size (100 %, the size every `readable()` check runs at). `var(--fs-1)` may appear in exactly one CSS rule, `.meta { font-size: var(--fs-1) }`; Task 0's `tokens.test.ts` enforces it.
 
 ### Colour tokens
 
@@ -107,7 +109,7 @@ Status shapes (so colour is never the only signal): needs you = filled dot with 
 
 - 4 px grid: `--sp-1` 0.25rem, `--sp-2` 0.5rem, `--sp-3` 0.75rem, `--sp-4` 1rem, `--sp-5` 1.5rem, `--sp-6` 2rem, `--sp-7` 3rem.
 - Radius: `--r-1` 6 px (buttons, inputs), `--r-2` 14 px (bubbles, cards), `--r-pill` 999 px (badges). One elevation only (drawer and toasts: `0 8px 24px oklch(0% 0 0 / 0.18)`).
-- **Touch targets: at least 48 × 48 CSS px** on touch screens (`@media (pointer: coarse)`), with 8 px between neighbours; at least 32 px on mouse screens. The key row, answer buttons, Send, mic and toolbar keys are 48 px tall everywhere. (The brief said "≤48 px"; this plan reads it as a 48 px floor, Material's minimum. Needs Ben 4.)
+- **Touch targets: at least 48 × 48 CSS px** on touch screens (`@media (pointer: coarse)`), with 8 px between neighbours; at least 32 px on mouse screens. The key row, answer buttons, Send, mic and toolbar keys are 48 px tall everywhere. (The brief said "≤48 px"; this plan reads it as a 48 px floor, Material's minimum. Needs Ben 3.)
 - Focus: a 2 px `--accent` outline with 2 px offset on `:focus-visible`, never removed.
 
 ### Motion
@@ -159,10 +161,14 @@ Fixed strings used by the acceptance checks (Task A8 exports them from `web/src/
 │ ◉ porthole            ◉ needs you│░░░░░░
 │ ✓ intake                   ✓ done│░░░░░░
 │ TERMINALS                        │░░░░░░
-│ ▾ Desktop · default              │░░░░░░
-│   ▾ 0                            │░░░░░░
-│     ▸ 1 editor   ○ ● 2 panes     │░░░░░░
-│ ▸ Desktop · herdr                │░░░░░░
+│ ▾ Desktop                        │░░░░░░
+│   ▾ tmux · default      ← socket │░░░░░░
+│     ▾ porthole          ← session│░░░░░░
+│       ▾ 1 editor        ← window │░░░░░░
+│         ● pane 0 · omp  ● working│░░░░░░
+│         ○ pane 1 · bash    ○ idle│░░░░░░
+│   ▸ herdr · main     ← workspace │░░░░░░
+│     (tab → pane rows when opened)│░░░░░░
 │──────────────────────────────────│░░░░░░
 │ Settings                         │░░░░░░
 │ Config · Desktop                 │░░░░░░
@@ -190,11 +196,11 @@ Fixed strings used by the acceptance checks (Task A8 exports them from `web/src/
 │ │ Question: Red or blue?               │ │ ← open question card (from inbox)
 │ │ [ Red ]  [ Blue ]                    │ │
 │ └──────────────────────────────────────┘ │
-│ [Esc][ ↑ ][ ↓ ][Enter][Tab][Stop][⋯ more]│ ← key row; disabled + note in live voice
-│ ┌──────────────────────────────┐ [🎙][📎] │
+│ [Esc][ ↑ ][ ↓ ][Enter][Tab][Stop][⋯ more]│ ← key row (no Ctrl+C); disabled + note in live voice
+│ ┌──────────────────────────────┐ [🎙][📎] │ ← 📎: Camera · Photo · File · Pasted image
 │ │ Type a message…              │  [Send] │ ← composer; draft saved each keystroke
 │ └──────────────────────────────┘         │
-│ Saved on this device · Sent history ▸    │
+│ Saved on this device · Sent history ▸    │ ← last 50 sent: reopen into the box, or copy
 └──────────────────────────────────────────┘
 ```
 
@@ -212,8 +218,10 @@ Non-omp pane: the bubbles area becomes one wrapped monospace block of the pane's
 │└────────────────────────────────────────┘│
 │ [Ctrl][Esc][Tab][←][↑][↓][→][Paste][⌘][A-][A+]│ ← toolbar, scrolls sideways
 └──────────────────────────────────────────┘
- Ctrl: tap = next key only, double tap = locked (button shows "Ctrl 🔒")
- ⌘ opens the shortcut panel (Ben's shortcuts as buttons)
+ Ctrl: tap = next key only, double tap = locked (button shows "Ctrl 🔒"), tap again = off
+ ⌘ opens the shortcut panel (this machine's shortcuts as buttons); A-/A+ = terminal text size
+ Gestures (Settings can remap each): 1-finger sideways = window/tab, 2-finger sideways = pane,
+ 2-finger up/down = session/workspace, pinch = text size, double tap = paste, drag up = scroll back
  Read-only (herdr without attach, or live voice): grey banner above the terminal with the reason.
 ```
 
@@ -231,9 +239,11 @@ Non-omp pane: the bubbles area becomes one wrapped monospace block of the pane's
 │ │ Type an answer…            [Answer]  │ │
 │ │ [Open]                        [Stop] │ │
 │ └──────────────────────────────────────┘ │
-│ ← swipe left to archive · Archive (7 days)│
+│ ← swipe any card left to archive · Archive (7 days)│
 └──────────────────────────────────────────┘
- Multi-select: options are tick boxes plus [Submit]. Closed question: note "Answer this in the terminal".
+ Every card (any column) has [Open] and [Stop]; a needs-you card also has the answer controls.
+ Multi-select or several questions: "Answer this in the terminal" until gap G2 lands (spec deviation, Needs Ben 2).
+ Closed question: note "Answer this in the terminal".
 ```
 
 **Changes (diff)** (SPEC 4.9):
@@ -284,11 +294,17 @@ Non-omp pane: the bubbles area becomes one wrapped monospace block of the pane's
 │  Send after transcribing        [ on ]   │   │ USAGE                                    │
 │  Stop after 2 s of silence      [ on ]   │   │  Collect usage numbers          [ on ]   │
 │  Read replies aloud             [ off ]  │   │ VOICE                                    │
-│ GESTURES                                 │   │  Tidy up dictated text          [ off ]  │
-│  Swipe sideways → next window  [change]  │   │  Kept recordings (2)                  ▸  │
-│  tmux prefix key               [ C-b ]   │   │ HEALTH CHECK                             │
-│ TEXT SIZE   [A-]  100 %  [A+]            │   │  ✓ Agent add-on installed                │
-│ NOTIFICATIONS (phone app only)           │   │  ✕ Scrolling needs "set -g mouse on" …   │
+│ GESTURES (terminal)                      │   │  Tidy up dictated text          [ off ]  │
+│  One finger sideways   Window   [change] │   │  Kept recordings (2)                  ▸  │
+│  Two fingers sideways  Pane     [change] │   │ HEALTH CHECK                             │
+│  Two fingers up/down   Session  [change] │   │  ✓ Agent add-on installed                │
+│  Pinch                 Text size[change] │   │  ✕ Scrolling needs "set -g mouse on" …   │
+│  Double tap            Paste    [change] │   │                                          │
+│  Drag up               Scroll   [change] │   │                                          │
+│  (Window changes also show at the desk)  │   │                                          │
+│  tmux prefix key               [ C-b ]   │   │                                          │
+│ TEXT SIZE   [A-]  100 %  [A+]            │   │                                          │
+│ NOTIFICATIONS (phone app only)           │   │                                          │
 └──────────────────────────────────────────┘   └──────────────────────────────────────────┘
 ```
 
@@ -349,7 +365,7 @@ web/index.html ──► src/main.js (boot: settings, machines, fleet, router, s
 - **Machines list.** In a browser: `localStorage` `porthole:machines` = `[{name, origin}]`; on first run it is filled from this page's own origin (`GET /v1/machine` for the name) plus `GET /v1/config` → `peers` (each peer's name from its own `GET /v1/machine`; if that fails, the host part of the origin). In the Android app the list comes from the bridge (`machines()`), because SPEC 4.16 keeps it native.
 - **Drafts and history (SPEC 4.5).** Key `porthole:draft:<origin>|<sessionId>` → `{text, files: string[], updatedAt}`, written on every `input` event (no debounce: one small `setItem` per keystroke is cheap and is the "never lose a word" guarantee). Key `porthole:sent:<origin>|<sessionId>` → the last 50 `{clientMsgId, text, at, status, reason}`. Key `porthole:outbox` → sends not yet answered `delivered` / `refused` / `failed`. A `QuotaExceededError` shows `draftSaveFailed` and keeps the text in the box.
 - **Send flow.** Press Send → `clientMsgId = "web-" + crypto.randomUUID()` → outbox entry (status `held`) → if the machine link is up, `POST /v1/sessions/:id/send`. Answers: `delivered` → clear draft, add to sent history, remove from outbox; `pending` → keep draft, show `pendingTitle`, poll `GET /v1/sends/:clientMsgId` every 3 s (also resumed after a reload from the outbox) until it changes; `refused` / `failed` → keep draft, show `sendFailedTitle` plus hostd's `reason`, offer "Try again" (same `clientMsgId`, which hostd allows for refused/failed ids); network failure (status 0) → keep draft and outbox entry as `held`, show `sendHeld`, and send again with the same `clientMsgId` when the link comes back (hostd answers a repeat from `sent.jsonl`, so it is never delivered twice).
-- **Keys and shortcuts.** In the chat view the key row and shortcuts go through `POST /v1/sessions/:id/keys` (hostd refuses them for live voice). In the terminal view, toolbar keys, gestures and shortcuts are encoded to bytes by `lib/steps.js` and written into the terminal connection, exactly as if typed, so tmux sees its prefix key like a real keyboard (`send-keys` would hand `C-b` to the program instead, so it cannot drive tmux). Shortcut text uses the P2 step syntax: split on commas not preceded by `\`, `\,` becomes `,`.
+- **Keys and shortcuts.** In the chat view the key row (`Esc`, `↑`, `↓`, `Enter`, `Tab`, `Stop`, then this machine's shortcuts; SPEC 4.3) goes through `POST /v1/sessions/:id/keys` (hostd refuses them for live voice). `Stop` is the step `Esc` (omp's interrupt). The chat view has **no Ctrl+C button** anywhere: `chatKeyRow` (A3) leaves out any custom shortcut that contains a `C-c` or `prefix` step (both stay in the terminal's shortcut panel). In the terminal view, toolbar keys, gestures (`lib/gestures.js`, A9) and shortcuts are encoded to bytes by `lib/steps.js` and written into the terminal connection, exactly as if typed, so tmux sees its prefix key like a real keyboard (`send-keys` would hand `C-b` to the program instead, so it cannot drive tmux). Shortcut text uses the P2 step syntax: split on commas not preceded by `\`, `\,` becomes `,`.
 - **Native bridge** (`net/bridge.js`): if `window.PortholeNative` exists (the object Android's `addWebMessageListener` injects), calls are `PortholeNative.postMessage(JSON.stringify({id, method, args}))` and replies arrive as `{id, ok, result}` / `{id, ok:false, error}` on its `onmessage`; native events arrive as `{event, data}`. Allowed methods (the page refuses any other name before sending): `machines`, `speak`, `stopSpeaking`, `startRecording`, `stopRecording`, `pickFile`, `openExternal`. Native events: `network` (reconnect now), `share` ({path, name} already uploaded by native, inserted into the composer). In a plain browser every method resolves to `null` and callers use the web fallback (`speechSynthesis`, `MediaRecorder`, `<input type=file>`, `window.open`).
 - **Routing** (`lib/route.js`): hash routes, all parts `encodeURIComponent`-ed (session ids contain `:` and `.`): `#/inbox`, `#/chat/<machineName>/<sessionId>`, `#/term/<machineName>/<sessionId>`, `#/changes/<machineName>/<sessionId>`, `#/previews/<machineName>`, `#/usage`, `#/settings`, `#/config/<machineName>`. Unknown routes go to `#/inbox`. The last chat or terminal opened is stored (`porthole:open`, the "open on this device" list, SPEC 4.1) and reopened on launch.
 - **Security headers** come from the static route (gap G1): `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' <each peer origin> <wss:// form of self and each peer>; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-cache`. `'unsafe-inline'` is for styles only, because xterm.js's DOM renderer inserts its own `<style>` element (**[INFERENCE]** from how xterm's DOM renderer themes cells; Task D3 confirms by loading with `style-src 'self'` first and keeping `'unsafe-inline'` only if the terminal renders unstyled). Scripts stay `'self'` only.
@@ -367,47 +383,48 @@ All paths are relative to the worktree root `/home/cortex/00-system/porthole/.wo
 | `web/styles/tokens.css`, `web/styles/base.css` | colour, type, spacing, motion tokens; resets, focus ring, `.visually-hidden`, buttons, inputs | 0 |
 | `web/src/dom/h.js` | `h(tag, attrs, ...children)`: `createElement`, `setAttribute` (refuses `on*` and `style` strings), `textContent` only | 0 |
 | `web/vendor/**`, `web/vendor/VENDOR.md` | pinned xterm 6.0.0, addon-fit 0.11.0, marked 18.1.1, their `LICENSE` files, per-file sha256 table | 0 |
-| `web/test/fixtures/chat-p3.jsonl`, `web/test/fixtures/reply-p3.jsonl` | P3 chat fixture and the reply line appended in the read-aloud test | 0 |
-| `web/test/unit/oklch.ts`, `web/test/unit/contrast.test.ts`, `web/test/unit/vendor.test.ts` | token contrast proof; vendored file hashes | 0 |
+| `web/test/fixtures/chat-p3.jsonl`, `web/test/fixtures/reply-p3.jsonl` | P3 chat fixture and the reply turn (in-between text, tool call, final reply) appended in the read-aloud test | 0 |
+| `web/test/unit/oklch.ts`, `web/test/unit/contrast.test.ts`, `web/test/unit/vendor.test.ts`, `web/test/unit/tokens.test.ts` | token contrast proof; vendored file hashes; `--fs-1` used by `.meta` only | 0 |
 | `web/src/lib/storage.js`, `drafts.js`, `outbox.js` + `web/test/unit/drafts.test.js`, `outbox.test.js` | draft store, sent history, outbox state machine | A1 |
 | `web/src/lib/reconnect.js` + `web/test/unit/reconnect.test.js` | backoff schedule and timer | A2 |
 | `web/src/lib/steps.js` + `web/test/unit/steps.test.js` | step syntax parse, labels, keys for `/keys`, bytes for the terminal | A3 |
 | `web/src/lib/markdown.js` + `web/test/unit/markdown.test.js` | Markdown → neutral tree, allowlist | A4 |
 | `web/src/lib/speech.js` + `web/test/unit/speech.test.js` | read-aloud summary: first paragraph + decision titles | A5 |
 | `web/src/lib/wav.js`, `silence.js` + `web/test/unit/wav.test.js`, `silence.test.js` | 16 kHz mono WAV encoder, resampler, 2 s silence detector | A6 |
-| `web/src/lib/chatmodel.js`, `tree.js`, `inboxmodel.js`, `format.js`, `route.js` + one `*.test.js` each | chat item merge, sidebar tree, inbox groups, times/sizes, hash routes | A7 |
+| `web/src/lib/chatmodel.js`, `tree.js`, `inboxmodel.js`, `format.js`, `route.js` + one `*.test.js` each | chat item merge and final-reply rule, sidebar tree (tmux socket → session → window → pane, herdr workspace → tab → pane), inbox groups (column → project → machine) and context ring, times/sizes, hash routes | A7 |
 | `web/src/lib/copy.js` + `web/test/unit/copy.test.js` | every on-screen string; banned-word test | A8 |
+| `web/src/lib/gestures.js` + `web/test/unit/gestures.test.js` | terminal gesture recogniser, gesture → action map (remappable), Ctrl tap/lock latch, wheel bytes, terminal text size steps | A9 |
 | `web/src/net/api.js`, `socket.js`, `machine.js`, `fleet.js`, `bridge.js` + `web/test/unit/net.test.js`, `bridge.test.js` | I/O with injected fetch/WebSocket/timers | B1 |
-| `web/test/e2e/tsproxy.ts`, `cdp.ts`, `browser.ts`, `stack.ts`, `readable.ts`, `web/test/e2e/smoke.test.ts` | test TLS proxy, CDP client, throwaway Chromium, two test hostds, readability check | C1 |
-| `web/src/main.js`, `web/src/views/shell.js`, `sidebar.js`, `strip.js`, `web/styles/shell.css`, `web/test/e2e/drawer.test.ts` | boot, top bar, drawer, reconnect strip, lazy view loading | D1 |
-| `web/src/dom/mdom.js`, `web/src/views/chat.js`, `composer.js`, `keyrow.js`, `web/styles/chat.css`, `web/test/e2e/chat.test.ts` | chat view, composer, attachments, key row | D2 |
-| `web/src/views/terminal.js`, `web/styles/terminal.css`, `web/test/e2e/terminal.test.ts` | terminal, toolbar, gestures, shortcuts | D3 |
-| `web/src/views/inbox.js`, `web/styles/inbox.css`, `web/test/e2e/inbox.test.ts` | inbox columns, answer buttons, archive | D4 |
+| `web/test/e2e/tsproxy.ts`, `cdp.ts`, `browser.ts`, `stack.ts`, `readable.ts`, `web/test/e2e/smoke.test.ts` | test TLS proxy, CDP client, throwaway Chromium, two test hostds with every fixture kind and helper group D uses (C1's interface list), readability check | C1 |
+| `web/src/main.js`, `web/src/views/shell.js`, `sidebar.js`, `strip.js`, `web/styles/shell.css`, `web/test/e2e/drawer.test.ts` | boot, top bar, drawer, reconnect strip (machine links and `ctx.reportLink` links), lazy view loading | D1 |
+| `web/src/dom/mdom.js`, `web/src/views/chat.js`, `composer.js`, `keyrow.js`, `web/styles/chat.css`, `web/test/e2e/chat.test.ts` | chat view, composer, attachments, sent history, key row | D2 |
+| `web/src/views/terminal.js`, `web/styles/terminal.css`, `web/test/e2e/terminal.test.ts` | terminal, toolbar (Ctrl lock, shortcut panel, text size), gestures, shortcuts | D3 |
+| `web/src/views/inbox.js`, `web/styles/inbox.css`, `web/test/e2e/inbox.test.ts` | inbox columns, project → machine groups, answer buttons, Stop, swipe-to-archive, context ring | D4 |
 | `web/src/views/diff.js`, `previews.js`, `usage.js`, `web/styles/panels.css`, `web/test/e2e/panels.test.ts` | changes, previews, usage | D5 |
-| `web/src/views/settings.js`, `config.js`, `web/styles/settings.css`, `web/test/e2e/settings.test.ts` | settings (text size, shortcuts, gestures, machines), config, doctor | D6 |
+| `web/src/views/settings.js`, `config.js`, `web/styles/settings.css`, `web/test/e2e/settings.test.ts` | Settings (this device: machines, talk mode, read-aloud, gestures, text size, notifications) and Config (per machine: custom shortcuts, hostd settings, extension status, doctor) | D6 |
 | `web/src/views/talk.js`, `web/styles/talk.css`, `web/test/e2e/talk.test.ts` | talk mode, recording, read-aloud | D7 |
 | `web/README.md`, `web/test/e2e/acceptance.test.ts` | how to run, P3 items 1-4 in one file, security greps | E1 |
 
-**How views meet without shared files:** `lib/route.js` (A7) maps each route to a view module name (`inbox`, `chat`, `term`, `changes`, `previews`, `usage`, `settings`, `config`); `main.js` (D1) loads it with `import("./views/" + name + ".js")` and calls its `mount(root, ctx)` export, which returns `{unmount()}`. `ctx` = `{fleet, route, settings, bridge, copy, navigate}`. So D2-D7 never edit D1's files and D1 never imports theirs statically. A view module that fails to load shows `copy.viewFailed` with a "Reload" button.
+**How views meet without shared files:** `lib/route.js` (A7) maps each route to a view module name (`inbox`, `chat`, `term`, `changes`, `previews`, `usage`, `settings`, `config`); `main.js` (D1) loads it with `import("./views/" + name + ".js")` and calls its `mount(root, ctx)` export, which returns `{unmount()}`. `ctx` = `{fleet, route, settings, bridge, copy, navigate, reportLink}`. `reportLink(name, state, retry?)` is how a view's own live connection (the chat stream, the terminal) reaches D1's reconnect strip: `name` is a `copy` label such as `copy.linkTerminal`, `state` is `"connecting" | "up" | "down"`, and `retry` (optional) is the view's `nudge` for the strip's "Try now" button; D1 drops every link a view reported when it unmounts that view. So D2-D7 never edit D1's files and D1 never imports theirs statically. A view module that fails to load shows `copy.viewFailed` with a "Reload" button.
 
 ## Parallel groups
 
 | Group | Tasks | Starts after | Runs in parallel? |
 |---|---|---|---|
-| 0 | 0 | P2 merged into the branch point, and gap G1 landed (Task C1 and every e2e step need `GET /`) | alone |
-| A | A1, A2, A3, A4, A5, A6, A7, A8 | 0 | yes, all eight (pure modules, disjoint files) |
+| 0 | 0 | P2 merged into the branch point, and gaps G1 and G6 landed (one short backend task right after P2; C1 and every e2e step need `GET /`, D7 needs `stopReason`) | alone |
+| A | A1, A2, A3, A4, A5, A6, A7, A8, A9 | 0 | yes, all nine (pure modules, disjoint files) |
 | B | B1 | A1, A2, A7, A8 | alongside C |
 | C | C1 | 0 | alongside A and B |
-| D | D1, D2, D3, D4, D5, D6, D7 | B1, C1 (and the A modules each names) | yes, all seven (disjoint files; lazy view loading) |
+| D | D1, D2, D3, D4, D5, D6, D7 | B1, C1 (and the A modules each names) | code: yes, all seven (disjoint files; lazy view loading). e2e steps: **no**, see below |
 | E | E1 | all of D | alone |
 
-Unit tests in group A need only Bun. Group C and D e2e tests need `tmux`, `openssl` and `chromium` on the desktop, and run one test file at a time (each starts its own Chromium; never two e2e files at once, to keep the machine responsive).
+Unit tests in group A need only Bun. Group C and D e2e tests need `tmux`, `openssl` and `chromium` on the desktop, and **never run two e2e files at once** (each starts its own Chromium and two tmux servers). So in group D the seven workers write code and run their unit-level checks in parallel, but none of them runs `bun test web/test/e2e/...` itself: each D task's e2e step is a request to the **e2e queue**, run by the orchestrator (or the manager it names) one file at a time, in the order the requests arrive. A D worker sends its file name to the queue, waits for that run's output, fixes its own files if the run fails, and re-queues (at most 2 failed runs per file, then stop and report). The queue command is exactly the one in the task's e2e step; nothing else may start Chromium meanwhile.
 
 ---
 
 ## Task 0: Scaffold, tokens, vendored libraries, fixtures
 
-**Files:** Create `web/tsconfig.json`, `web/index.html`, `web/styles/tokens.css`, `web/styles/base.css`, `web/src/dom/h.js`, `web/vendor/xterm/xterm.mjs`, `web/vendor/xterm/xterm.css`, `web/vendor/xterm/LICENSE`, `web/vendor/addon-fit/addon-fit.mjs`, `web/vendor/addon-fit/LICENSE`, `web/vendor/marked/marked.esm.js`, `web/vendor/marked/LICENSE`, `web/vendor/VENDOR.md`, `web/test/fixtures/chat-p3.jsonl`, `web/test/fixtures/reply-p3.jsonl`, `web/test/unit/oklch.ts`, `web/test/unit/contrast.test.ts`, `web/test/unit/vendor.test.ts`. Modify `package.json` (scripts), `.gitignore`.
+**Files:** Create `web/tsconfig.json`, `web/index.html`, `web/styles/tokens.css`, `web/styles/base.css`, `web/src/dom/h.js`, `web/vendor/xterm/xterm.mjs`, `web/vendor/xterm/xterm.css`, `web/vendor/xterm/LICENSE`, `web/vendor/addon-fit/addon-fit.mjs`, `web/vendor/addon-fit/LICENSE`, `web/vendor/marked/marked.esm.js`, `web/vendor/marked/LICENSE`, `web/vendor/VENDOR.md`, `web/test/fixtures/chat-p3.jsonl`, `web/test/fixtures/reply-p3.jsonl`, `web/test/unit/oklch.ts`, `web/test/unit/contrast.test.ts`, `web/test/unit/vendor.test.ts`, `web/test/unit/tokens.test.ts`. Modify `package.json` (scripts), `.gitignore`.
 
 - [ ] **Step 1: Worktree.** From `/home/cortex/00-system/porthole/repo`:
 
@@ -415,7 +432,7 @@ Unit tests in group A need only Bun. Group C and D e2e tests need `tmux`, `opens
 omp-worktree new p3-web
 ```
 
-Print the path it reports; if it is not `/home/cortex/00-system/porthole/.worktrees/p3-web`, use the printed one everywhere below. Confirm the branch point contains P2 and G1: `git log --oneline -1 -- server/src/features/web.ts` must print a commit (the G1 file name is defined in "API gaps"). If it prints nothing, stop and report "G1 has not landed".
+Print the path it reports; if it is not `/home/cortex/00-system/porthole/.worktrees/p3-web`, use the printed one everywhere below. Confirm the branch point contains P2, G1 and G6: `git log --oneline -1 -- server/src/features/web.ts` must print a commit (the G1 file name is defined in "API gaps"), and `grep -c stopReason server/src/transcript/parse.ts` must print a number above 0 (G6). If either prints nothing or 0, stop and report which gap has not landed.
 
 - [ ] **Step 2: Design context.** Read `skill://impeccable` (Operate mode, app UI) and `skill://impeccable/reference/craft-floor.md`. Read only; nothing is written from them except what this plan already says.
 
@@ -546,6 +563,36 @@ for (const [name, t] of [["light", light], ["dark", dark]] as const) {
 
 `--border` is a hairline that carries no meaning on its own (every state also has a word or a shape), so it is parsed but not held to 3 : 1; the MARKS filter says so explicitly.
 
+`web/test/unit/tokens.test.ts` (finding: only `.meta` may fall under the 14 px floor):
+
+```ts
+import { expect, test } from "bun:test";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+const STYLES = path.join(import.meta.dir, "..", "..", "styles");
+const files = readdirSync(STYLES).filter((n) => n.endsWith(".css"));
+const strip = (css: string) => css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+test("--fs-2 is the 14 px floor and --fs-1 is 12 px", () => {
+  const t = strip(readFileSync(path.join(STYLES, "tokens.css"), "utf8"));
+  expect(t).toMatch(/--fs-1:\s*0\.75rem/);
+  expect(t).toMatch(/--fs-2:\s*0\.875rem/);
+});
+
+test("var(--fs-1) appears in exactly one rule, `.meta`", () => {
+  const uses: string[] = [];
+  for (const f of files) {
+    for (const m of strip(readFileSync(path.join(STYLES, f), "utf8")).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (m[2]!.includes("var(--fs-1)")) uses.push(`${f}: ${m[1]!.trim()}`);
+    }
+  }
+  expect(uses).toEqual(["base.css: .meta"]);
+});
+```
+
+The test reads every stylesheet present, so it runs again in E1 after group D has added theirs: a D task that uses `var(--fs-1)` anywhere fails it.
+
 - [ ] **Step 5: Run them and watch them fail.**
 
 ```bash
@@ -554,7 +601,7 @@ bun test web/test/unit
 
 Expected: FAIL (`tokens.css` and `VENDOR.md` missing or unparsed).
 
-- [ ] **Step 6: Implement.** `web/styles/tokens.css`: `:root { color-scheme: light dark; … }` with every token from the colour table (light values), the type scale (`--fs-1` … `--fs-6`, `--lh-body: 1.5`, `--fs-scale: 1` multiplied in by Settings → Text size through `html { font-size: calc(100% * var(--fs-scale)) }`), spacing, radius, the one shadow, `--dur-1: 100ms; --dur-2: 150ms; --dur-3: 200ms; --ease: cubic-bezier(0.2, 0, 0, 1)`, and `--tap: 48px`; then `@media (prefers-color-scheme: dark) { :root { …dark values… } }`; then `@media (prefers-reduced-motion: reduce) { :root { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms } }`. If a colour fails Step 5's test, darken/lighten its `L` in 1 % steps (at most two edits per token) and update the table above in the same commit so plan and code agree. `web/styles/base.css`: box-sizing, body font stacks from "Type", `:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px }`, `button, [role=button], input, select, textarea { min-block-size: var(--tap) }`, `.visually-hidden`, `.table-scroll { overflow-x: auto }`. `web/index.html`:
+- [ ] **Step 6: Implement.** `web/styles/tokens.css`: `:root { color-scheme: light dark; … }` with every token from the colour table (light values), the type scale (`--fs-1` … `--fs-5` exactly as the "Type" table, `--lh-body: 1.5`, `--fs-scale: 1` multiplied in by Settings → Text size through `html { font-size: calc(100% * var(--fs-scale)) }`), spacing, radius, the one shadow, `--dur-1: 100ms; --dur-2: 150ms; --dur-3: 200ms; --ease: cubic-bezier(0.2, 0, 0, 1)`, and `--tap: 48px`; then `@media (prefers-color-scheme: dark) { :root { …dark values… } }`; then `@media (prefers-reduced-motion: reduce) { :root { --dur-1: 0ms; --dur-2: 0ms; --dur-3: 0ms } }`. If a colour fails Step 5's test, darken/lighten its `L` in 1 % steps (at most two edits per token) and update the table above in the same commit so plan and code agree. `web/styles/base.css`: box-sizing, body font stacks from "Type", `:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px }`, `button, [role=button], input, select, textarea { min-block-size: var(--tap) }`, `.visually-hidden`, `.table-scroll { overflow-x: auto }`, and the one 12 px rule `.meta { font-size: var(--fs-1); line-height: 1.4; color: var(--text-2) }` (every other small label uses `var(--fs-2)`). `web/index.html`:
 
 ```html
 <!doctype html>
@@ -608,7 +655,11 @@ export function h(tag, attrs = {}, ...children) {
 
 `web/tsconfig.json`: `{"compilerOptions":{"allowJs":true,"checkJs":true,"noEmit":true,"strict":true,"target":"ES2022","module":"ES2022","moduleResolution":"bundler","lib":["ES2022","DOM","DOM.Iterable"],"skipLibCheck":true},"include":["src/**/*.js"]}`. `package.json` scripts add `"test:web": "bun test web/test/unit"`, `"test:web:e2e": "bun test --timeout 120000 web/test/e2e"`, `"typecheck:web": "tsc --noEmit -p web"`. `.gitignore` adds `web/test/.out/`.
 
-Fixtures. `web/test/fixtures/chat-p3.jsonl` (one JSON object per line, shapes copied from `server/test/fixtures/chat-basic.jsonl`): a `title` line ("P3 fixture"), a `session` line (`id: "fx-p3"`), user `u1` "Can you compare the two plans?", assistant `a1` with text "Here they are side by side:\n\n| Plan | Cost | Time |\n|---|---|---|\n| Small | $10 | 1 day |\n| Large | $40 | 3 days |" plus two `toolCall` parts (`read`, `grep`), `toolResult` `r1`, a `custom_message` `d1` with `customType: "live-delegation"`, content "Also check the tests", and assistant `a2` "Done. Both plans are listed above." with `stopReason: "stop"`. `web/test/fixtures/reply-p3.jsonl` (exactly one line, appended during the read-aloud test): assistant `a3`, `parentId: "a2"`, text
+Fixtures. `web/test/fixtures/chat-p3.jsonl` (one JSON object per line, shapes copied from `server/test/fixtures/chat-basic.jsonl`): a `title` line ("P3 fixture"), a `session` line (`id: "fx-p3"`), user `u1` "Can you compare the two plans?", assistant `a1` with text "Here they are side by side:\n\n| Plan | Cost | Time |\n|---|---|---|\n| Small | $10 | 1 day |\n| Large | $40 | 3 days |" plus two `toolCall` parts (`read`, `grep`) and `stopReason: "toolUse"`, `toolResult` `r1`, a `custom_message` `d1` with `customType: "live-delegation"`, content "Also check the tests", and assistant `a2` "Done. Both plans are listed above." with `stopReason: "stop"`. `web/test/fixtures/reply-p3.jsonl` (exactly three lines, appended together during the read-aloud test; one finished turn whose in-between text must never be spoken):
+
+1. assistant `a3`, `parentId: "a2"`, `stopReason: "toolUse"`, content = text "Let me run the tests before I answer." plus one `toolCall` (`bash`, arguments `{"command":"bun test"}`);
+2. `toolResult` `r3`, `parentId: "a3"`, for that call, text "12 pass";
+3. assistant `a4`, `parentId: "r3"`, `stopReason: "stop"`, text
 
 ```
 The tests pass and the page loads on the phone.
@@ -629,7 +680,7 @@ I checked both machines.
 bun test web/test/unit
 ```
 
-Expected: PASS, 6 tests (vendor 2, contrast 4; the count Bun prints is the source of truth).
+Expected: PASS, 9 tests (vendor 2, contrast 4, tokens 2; at this point `tokens.test.ts` sees only `tokens.css` and `base.css`; the count Bun prints is the source of truth).
 
 ```bash
 bun run typecheck:web
@@ -640,7 +691,7 @@ Expected: no output, exit 0. If `tsc` (TypeScript 7) says it cannot check `.js` 
 - [ ] **Step 8: Commit and push.**
 
 ```bash
-git add package.json .gitignore web/tsconfig.json web/index.html web/styles/tokens.css web/styles/base.css web/src/dom/h.js web/vendor/VENDOR.md web/vendor/xterm/lib/xterm.mjs web/vendor/xterm/css/xterm.css web/vendor/xterm/LICENSE web/vendor/addon-fit/lib/addon-fit.mjs web/vendor/addon-fit/LICENSE web/vendor/marked/lib/marked.esm.js web/vendor/marked/LICENSE web/test/fixtures/chat-p3.jsonl web/test/fixtures/reply-p3.jsonl web/test/unit/oklch.ts web/test/unit/contrast.test.ts web/test/unit/vendor.test.ts
+git add package.json .gitignore web/tsconfig.json web/index.html web/styles/tokens.css web/styles/base.css web/src/dom/h.js web/vendor/VENDOR.md web/vendor/xterm/lib/xterm.mjs web/vendor/xterm/css/xterm.css web/vendor/xterm/LICENSE web/vendor/addon-fit/lib/addon-fit.mjs web/vendor/addon-fit/LICENSE web/vendor/marked/lib/marked.esm.js web/vendor/marked/LICENSE web/test/fixtures/chat-p3.jsonl web/test/fixtures/reply-p3.jsonl web/test/unit/oklch.ts web/test/unit/contrast.test.ts web/test/unit/vendor.test.ts web/test/unit/tokens.test.ts
 ```
 
 ```bash
@@ -800,13 +851,13 @@ git add web/src/lib/reconnect.js web/test/unit/reconnect.test.js && git commit -
 
 **Files:** Create `web/src/lib/steps.js`, `web/test/unit/steps.test.js`.
 
-**Interface.** `parseSteps(text)` → `{ok: true, steps: string[]} | {ok: false, reason}` (split on `,` not preceded by `\`, `\,` → `,`, trim each, 1-32 steps, each a valid key name per V8 or `text:<t>`; reason is a plain sentence naming the bad step). `formatSteps(steps)` → text (escapes `,` inside `text:` steps). `stepLabel(step)` → what a button shows (`"Ctrl+C"`, `"Esc"`, `"↑"`, `"Tab"`, `"Type: git status"`). `stepBytes(step, prefix)` → `Uint8Array` for the terminal: `Enter` `\r`, `Tab` `\t`, `Esc` `\x1b`, `Space` ` `, `BSpace` `\x7f`, arrows `\x1b[A/B/C/D` (`Up/Down/Right/Left`), `Home` `\x1b[H`, `End` `\x1b[F`, `PageUp` `\x1b[5~`, `PageDown` `\x1b[6~`, `C-a`..`C-z` code `1..26`, single printable char as UTF-8, `text:<t>` UTF-8 of `<t>`; the pseudo-step `prefix` emits the tmux prefix (setting, default `C-b`, G-guess 4). `gestureSteps(name)` → steps for swipe left/right (`["prefix","p"]` / `["prefix","n"]`, previous/next tmux window) and long-press paste (`[]`, the view pastes the clipboard as `text:`).
+**Interface.** `parseSteps(text)` → `{ok: true, steps: string[]} | {ok: false, reason}` (split on `,` not preceded by `\`, `\,` → `,`, trim each, 1-32 steps, each a valid key name per V8 or `text:<t>`; reason is a plain sentence naming the bad step). `formatSteps(steps)` → text (escapes `,` inside `text:` steps). `stepLabel(step)` → what a button shows (`"Ctrl+C"`, `"Esc"`, `"↑"`, `"Tab"`, `"Type: git status"`). `stepBytes(step, prefix)` → `Uint8Array` for the terminal: `Enter` `\r`, `Tab` `\t`, `Esc` `\x1b`, `Space` ` `, `BSpace` `\x7f`, arrows `\x1b[A/B/C/D` (`Up/Down/Right/Left`), `Home` `\x1b[H`, `End` `\x1b[F`, `PageUp` `\x1b[5~`, `PageDown` `\x1b[6~`, `C-a`..`C-z` code `1..26`, single printable char as UTF-8, `text:<t>` UTF-8 of `<t>`; the pseudo-step `prefix` emits the tmux prefix (setting, default `C-b`, G-guess 4). `chatKeyRow(shortcuts)` → the chat view's buttons, in this order (SPEC 4.3): `{label:"Esc", steps:["Esc"]}`, `{label:"↑", steps:["Up"]}`, `{label:"↓", steps:["Down"]}`, `{label:"Enter", steps:["Enter"]}`, `{label:"Tab", steps:["Tab"]}`, `{label:"Stop", steps:["Esc"], stop:true}`, then one `{label: shortcut.name, steps}` per custom shortcut, leaving out any shortcut with a `C-c` or `prefix` step (no Ctrl+C button in the chat view). Gesture → step mapping is not here: it lives in A9's `gestures.js`.
 
 - [ ] **Step 1: Failing test.**
 
 ```js
 import { expect, test } from "bun:test";
-import { formatSteps, parseSteps, stepBytes, stepLabel } from "../../src/lib/steps.js";
+import { chatKeyRow, formatSteps, parseSteps, stepBytes, stepLabel } from "../../src/lib/steps.js";
 
 const bytes = (s, p = "C-b") => [...stepBytes(s, p)];
 
@@ -833,6 +884,16 @@ test("terminal bytes", () => {
   expect(bytes("text:é")).toEqual([195, 169]);
   expect(bytes("prefix")).toEqual([2]);
   expect(bytes("prefix", "C-a")).toEqual([1]);
+});
+test("chat key row: fixed keys, Stop sends Esc, no Ctrl+C anywhere", () => {
+  const row = chatKeyRow([
+    { name: "Clear", steps: ["C-c"] },
+    { name: "New window", steps: ["prefix", "c"] },
+    { name: "Status", steps: ["text:git status", "Enter"] },
+  ]);
+  expect(row.map((b) => b.label)).toEqual(["Esc", "↑", "↓", "Enter", "Tab", "Stop", "Status"]);
+  expect(row.find((b) => b.label === "Stop")).toEqual({ label: "Stop", steps: ["Esc"], stop: true });
+  expect(row.some((b) => b.steps.includes("C-c") || /ctrl\+c/i.test(b.label))).toBe(false);
 });
 ```
 
@@ -907,7 +968,7 @@ git add web/src/lib/markdown.js web/test/unit/markdown.test.js && git commit -m 
 
 **Interface.** `summaryUtterances(markdown)` → `string[]`: first the first paragraph (the first `paragraph` token, as plain text with inline marks removed), then for each item of the first ordered list after a heading whose text is "Needs your decision" (case-insensitive, any level) one string `"<n>. <title>"`, where title = the item's leading `strong` text, else its first line. If there is no such list, only the first paragraph. If that list's single item is "None." the result is only the first paragraph. Uses `marked.lexer` too.
 
-- [ ] **Step 1: Failing test** (the reply text is the exact body of `web/test/fixtures/reply-p3.jsonl`, read from the file so the e2e test and this one share it):
+- [ ] **Step 1: Failing test** (the reply text is the exact body of the last line, assistant `a4`, of `web/test/fixtures/reply-p3.jsonl`, read from the file so the e2e test and this one share it; which item gets spoken is A7's `finishedReplies`, not this module):
 
 ```js
 import { expect, test } from "bun:test";
@@ -915,8 +976,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { summaryUtterances } from "../../src/lib/speech.js";
 
-const line = JSON.parse(readFileSync(path.join(import.meta.dir, "..", "fixtures", "reply-p3.jsonl"), "utf8").trim());
-const reply = line.message.content.find((p) => p.type === "text").text;
+const lines = readFileSync(path.join(import.meta.dir, "..", "fixtures", "reply-p3.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const reply = lines.at(-1).message.content.find((p) => p.type === "text").text;
 
 test("fixture reply: first paragraph plus decision titles", () => {
   expect(summaryUtterances(reply)).toEqual(["The tests pass and the page loads on the phone.", "1. Merge the branch", "2. Turn on the advisor"]);
@@ -1009,9 +1070,9 @@ git add web/src/lib/wav.js web/src/lib/silence.js web/test/unit/wav.test.js web/
 **Files:** Create `web/src/lib/chatmodel.js`, `tree.js`, `inboxmodel.js`, `format.js`, `route.js` and `web/test/unit/chatmodel.test.js`, `tree.test.js`, `inboxmodel.test.js`, `format.test.js`, `route.test.js`.
 
 **Interfaces.**
-- `chatmodel.js`: `createChat()` → `{backlog(page), append(items, end), older(page), items(), newestAssistant()}`; items are unique by `cursor`, kept in cursor order; `append` returns the items that are new (the read-aloud trigger uses this, so a reconnect's backlog never re-speaks old replies). `kind:"tools"` items render collapsed: `toolSummary(item)` → `"Used 2 tools: read, grep"`.
-- `tree.js`: `buildSidebar(trees, openList)` → `{machines: [{name, origin, state, needYou}], active: Row[], chats: Group[], terminals: Group[]}`; a session with `omp` goes under Chats and Terminals, without `omp` under Terminals only; groups are by machine then project (`basename(cwd)`), sorted needs-you first, then working, then name (SPEC 4.2); `active` = entries of `porthole:open` that still exist.
-- `inboxmodel.js`: `groupInbox(itemsByMachine)` → `{needsYou: Item[], working: Item[], done: Item[]}` newest first by `updatedAt`, each item carrying its machine; `answerMode(item)` → `"buttons" | "terminal"` (`"terminal"` when `question.multi` is true or `question.count > 1`, because P2 answers one option for one question: gap G2, copy `answerInTerminal`).
+- `chatmodel.js`: `createChat()` → `{backlog(page), append(items, end), older(page), items(), newestAssistant()}`; items are unique by `id` (an assistant message's text item and its tools item share one `cursor`, `server/src/transcript/parse.ts` lines 38-40), kept in cursor order; `append` returns the items that are new (the read-aloud trigger uses this, so a reconnect's backlog never re-speaks old replies). `kind:"tools"` items render collapsed: `toolSummary(item)` → `"Used 2 tools: read, grep"`. `finishedReplies(newItems)` → the new items that are the final assistant message of a finished turn: `kind === "assistant"` and `stopReason === "stop"` (gap G6 carries `stopReason` on assistant items). Text an assistant writes before a tool call (`stopReason: "toolUse"`) is never returned, so it is never read aloud.
+- `tree.js`: `buildSidebar(trees, openList)` → `{machines: [{name, origin, state, needYou}], active: Row[], chats: Group[], terminals: TermMachine[]}`. **Chats** (SPEC 4.2 item 3): sessions with `omp`, grouped by machine then project (`basename(cwd)`), sorted needs-you first, then working, then name. **Terminals** (SPEC 4.2 item 4): every session as a tree, one `TermMachine = {machine, origin, nodes: Node[]}` per machine, where `Node = {key, kind, label, status, children: Node[]}` for groups and `{key, kind: "pane", label, status, id}` for leaves. tmux: `socket` (label = socket file name) → `session` (label = tmux session name) → `window` (label `"Window <n>"`) → `pane` (label `"Pane <n> · <session name>"`). herdr: `workspace` → `tab` → `pane` (label = session name). Order: tmux sockets first, then herdr workspaces; sockets, tmux sessions, workspaces, tabs and herdr panes by name; tmux windows and panes by number. A group's `status` is its most urgent child (needs-you > working > done > idle > unknown) so a collapsed group still shows the right dot. `neighbour(terminals, sessionId, level, dir)` → the id of the first pane of the next (`dir = 1`) or previous (`-1`) `level` group (`"session"` = tmux session or herdr workspace, `"window"` = tmux window or herdr tab, `"pane"`) inside the same parent, wrapping round, or `null` when there is only one; the terminal's gestures use it. `active` = entries of `porthole:open` that still exist.
+- `inboxmodel.js`: `groupInbox(itemsByMachine)` → `{needsYou: Group[], working: Group[], done: Group[]}` where `Group = {project, machines: [{machine, items: Item[]}]}` (SPEC 4.6: grouped by project folder, then machine; `project` = `basename(item.project)`); items newest first by `updatedAt` (a number, ms), groups ordered by their newest item; each item carries its machine. `answerMode(item)` → `"buttons" | "terminal"` (`"terminal"` when `question.multi` is true or `question.count > 1`, because P2 answers one option for one question: gap G2, copy `answerInTerminal`). `contextRing(item)` → `null` when `contextLeft` is `null` (no ring), else `{percent: Math.round(contextLeft * 100), warn: contextLeft < 0.15}` (SPEC 4.6: warning below 15 %).
 - `format.js`: `ago(iso, now)` → `"just now" | "3 min ago" | "2 h ago" | "yesterday" | "12 Oct"`; `resetsIn(iso, now)` → `"resets in 2 h 10 min"`; `bytes(n)` → `"1.2 MB"`.
 - `route.js`: `parse(hash)` → `{view, machine?, sessionId?}`, `href(route)` → hash, `VIEWS` (route name → module name); unknown → `{view: "inbox"}`.
 
@@ -1020,8 +1081,8 @@ git add web/src/lib/wav.js web/src/lib/silence.js web/test/unit/wav.test.js web/
 ```js
 // chatmodel.test.js
 import { expect, test } from "bun:test";
-import { createChat, toolSummary } from "../../src/lib/chatmodel.js";
-const it = (cursor, kind = "assistant", text = "t" + cursor) => ({ cursor, id: "i" + cursor, at: "2026-10-13T09:00:00Z", kind, text, tools: [], via: null });
+import { createChat, finishedReplies, toolSummary } from "../../src/lib/chatmodel.js";
+const it = (cursor, kind = "assistant", text = "t" + cursor, stopReason = null) => ({ cursor, id: "i" + cursor, at: "2026-10-13T09:00:00Z", kind, text, tools: [], via: null, stopReason });
 test("append returns only new items and keeps order", () => {
   const c = createChat();
   c.backlog({ items: [it(1), it(2)], start: 1, end: 2, hasOlder: false });
@@ -1036,37 +1097,82 @@ test("tool summary", () => {
   expect(toolSummary({ ...it(1, "tools"), tools: ["read", "grep"] })).toBe("Used 2 tools: read, grep");
   expect(toolSummary({ ...it(1, "tools"), tools: ["read"] })).toBe("Used 1 tool: read");
 });
+test("only the final assistant message of a finished turn is a reply to read aloud", () => {
+  const fresh = [it(4, "assistant", "Let me run the tests before I answer.", "toolUse"), it(5, "tools"), it(6, "assistant", "The tests pass.", "stop"), it(7, "user", "thanks")];
+  expect(finishedReplies(fresh).map((i) => i.cursor)).toEqual([6]);
+  expect(finishedReplies([it(8, "assistant", "half", null)])).toEqual([]);
+});
 ```
 
 ```js
 // tree.test.js
 import { expect, test } from "bun:test";
-import { buildSidebar } from "../../src/lib/tree.js";
-const s = (id, name, cwd, status, omp) => ({ id, kind: "tmux", name, cwd, status, reported: true, questionCount: status === "needs-you" ? 1 : 0, liveVoice: false, pinned: false, where: "here", attached: false, omp: omp ? { pid: 1, transcript: "/t", inbox: null } : null, herdrStatus: null, dirty: null });
-test("omp sessions are chats and terminals; plain shells are terminals only; needs-you first", () => {
-  const trees = [{ origin: "https://testdesk.example.ts.net", state: "up", tree: { machine: "testdesk", scannedAt: "", sources: [], sessions: [s("a", "web", "/p/porthole", "working", true), s("b", "api", "/p/porthole", "needs-you", true), s("c", "sh", "/p/porthole", "idle", false)] } }];
+import { buildSidebar, neighbour } from "../../src/lib/tree.js";
+const tm = (socket, session, window, pane) => ({ kind: "tmux", socket, session, window, pane });
+const s = (id, name, cwd, status, omp, where = tm("/run/t/default", "main", 0, 0)) => ({ id, kind: where.kind, name, cwd, status, reported: true, questionCount: status === "needs-you" ? 1 : 0, liveVoice: false, pinned: false, where, attached: false, omp: omp ? { pid: 1, transcript: "/t", inbox: true } : null, herdrStatus: null, dirty: null });
+const D = "https://testdesk.example.ts.net";
+test("omp sessions are chats, needs-you first; machines carry their need-you count", () => {
+  const trees = [{ origin: D, state: "up", tree: { machine: "testdesk", scannedAt: "", sources: [], sessions: [s("a", "web", "/p/porthole", "working", true, tm("/run/t/default", "main", 0, 0)), s("b", "api", "/p/porthole", "needs-you", true, tm("/run/t/default", "main", 0, 1)), s("c", "sh", "/p/porthole", "idle", false, tm("/run/t/default", "main", 1, 0))] } }];
   const side = buildSidebar(trees, []);
   expect(side.chats[0].rows.map((r) => r.id)).toEqual(["b", "a"]);
-  expect(side.terminals[0].rows.map((r) => r.id)).toEqual(["b", "a", "c"]);
-  expect(side.machines).toEqual([{ name: "testdesk", origin: "https://testdesk.example.ts.net", state: "up", needYou: 1 }]);
   expect(side.chats[0].label).toBe("testdesk · porthole");
+  expect(side.machines).toEqual([{ name: "testdesk", origin: D, state: "up", needYou: 1 }]);
+});
+test("terminals: tmux is socket → session → window → pane; herdr is workspace → tab → pane", () => {
+  const sessions = [
+    s("t1", "web", "/p", "working", true, tm("/run/t/default", "main", 0, 0)),
+    s("t2", "api", "/p", "needs-you", true, tm("/run/t/default", "main", 0, 1)),
+    s("t3", "sh", "/p", "idle", false, tm("/run/t/default", "main", 2, 0)),
+    s("t4", "logs", "/p", "idle", false, tm("/run/t/default", "build", 0, 0)),
+    s("h1", "fe", "/p", "working", true, { kind: "herdr", workspace: "porthole", tab: "dev", pane: "p1" }),
+    s("h2", "be", "/p", "done", true, { kind: "herdr", workspace: "porthole", tab: "dev", pane: "p2" }),
+  ];
+  const side = buildSidebar([{ origin: D, state: "up", tree: { machine: "testdesk", scannedAt: "", sources: [], sessions } }], []);
+  const shape = (n) => (n.kind === "pane" ? `${n.kind}:${n.id}` : { [`${n.kind}:${n.label}:${n.status}`]: n.children.map(shape) });
+  expect(side.terminals[0].nodes.map(shape)).toEqual([
+    { "socket:default:needs-you": [
+      { "session:build:idle": [{ "window:Window 0:idle": ["pane:t4"] }] },
+      { "session:main:needs-you": [{ "window:Window 0:needs-you": ["pane:t1", "pane:t2"] }, { "window:Window 2:idle": ["pane:t3"] }] },
+    ] },
+    { "workspace:porthole:working": [{ "tab:dev:working": ["pane:h1", "pane:h2"] }] },
+  ]);
+  expect(neighbour(side.terminals, "t1", "pane", 1)).toBe("t2");
+  expect(neighbour(side.terminals, "t2", "pane", 1)).toBe("t1");
+  expect(neighbour(side.terminals, "t1", "window", 1)).toBe("t3");
+  expect(neighbour(side.terminals, "t1", "session", -1)).toBe("t4");
+  expect(neighbour(side.terminals, "h1", "session", 1)).toBeNull();
 });
 test("a machine that is down keeps its row and shows no sessions", () => {
   const side = buildSidebar([{ origin: "https://testlaptop.example.ts.net", state: "down", tree: null, name: "testlaptop" }], []);
   expect(side.machines[0]).toEqual({ name: "testlaptop", origin: "https://testlaptop.example.ts.net", state: "down", needYou: 0 });
   expect(side.chats).toEqual([]);
+  expect(side.terminals).toEqual([{ machine: "testlaptop", origin: "https://testlaptop.example.ts.net", nodes: [] }]);
 });
 ```
 
 ```js
 // inboxmodel.test.js
 import { expect, test } from "bun:test";
-import { answerMode, groupInbox } from "../../src/lib/inboxmodel.js";
+import { answerMode, contextRing, groupInbox } from "../../src/lib/inboxmodel.js";
 const q = (o) => ({ qid: "q", pid: 1, text: "Pick", options: ["A", "B"], multi: false, count: 1, open: true, outcome: null, ...o });
-test("columns, newest first, machine kept", () => {
-  const g = groupInbox({ testdesk: [{ id: "1", column: "needs-you", updatedAt: "2026-10-13T09:00:00Z" }, { id: "2", column: "needs-you", updatedAt: "2026-10-13T10:00:00Z" }, { id: "3", column: "done", updatedAt: "2026-10-13T08:00:00Z" }] });
-  expect(g.needsYou.map((i) => [i.id, i.machine])).toEqual([["2", "testdesk"], ["1", "testdesk"]]);
-  expect(g.done.map((i) => i.id)).toEqual(["3"]);
+const item = (id, column, updatedAt, project = "/work/porthole") => ({ id, column, updatedAt, project, contextLeft: null, question: null });
+test("columns, grouped by project then machine, newest first", () => {
+  const g = groupInbox({
+    testdesk: [item("1", "needs-you", 9), item("2", "needs-you", 10), item("3", "done", 8), item("4", "needs-you", 5, "/work/finance")],
+    testlaptop: [item("5", "needs-you", 7)],
+  });
+  expect(g.needsYou.map((p) => [p.project, p.machines.map((m) => [m.machine, m.items.map((i) => i.id)])])).toEqual([
+    ["porthole", [["testdesk", ["2", "1"]], ["testlaptop", ["5"]]]],
+    ["finance", [["testdesk", ["4"]]]],
+  ]);
+  expect(g.needsYou[0].machines[0].items[0].machine).toBe("testdesk");
+  expect(g.done[0].machines[0].items.map((i) => i.id)).toEqual(["3"]);
+});
+test("context ring: hidden without a number, warns below 15 %", () => {
+  expect(contextRing({ contextLeft: null })).toBeNull();
+  expect(contextRing({ contextLeft: 0.4 })).toEqual({ percent: 40, warn: false });
+  expect(contextRing({ contextLeft: 0.15 })).toEqual({ percent: 15, warn: false });
+  expect(contextRing({ contextLeft: 0.12 })).toEqual({ percent: 12, warn: true });
 });
 test("multi-select or several questions answer in the terminal (gap G2)", () => {
   expect(answerMode({ question: q({}) })).toBe("buttons");
@@ -1116,7 +1222,7 @@ git add web/src/lib/chatmodel.js web/src/lib/tree.js web/src/lib/inboxmodel.js w
 
 **Files:** Create `web/src/lib/copy.js`, `web/test/unit/copy.test.js`.
 
-`copy.js` exports one frozen object `copy` holding every string in the "Voice" table above plus each screen's labels (drawer group names "Machines", "Inbox", "Chats", "Terminals", "Settings", "Config"; button labels; empty states; errors) and functions for strings with values (`copy.needYou(n)` → `"1 needs you"`/`"3 need you"`; `copy.cannotReach(machine)` → `"Can't reach testlaptop. It may be asleep or offline. Porthole keeps trying."`). Views never write literal user-facing strings; Task E1's grep checks it.
+`copy.js` exports one frozen object `copy` holding every string in the "Voice" table above plus each screen's labels (drawer group names "Machines", "Inbox", "Chats", "Terminals", "Settings", "Config"; button labels, including the key row's "Stop", the toolbar's "Ctrl", "Ctrl locked", "Shortcuts", "Smaller text", "Bigger text", the attach menu's "Take a photo", "Choose a photo", "Choose a file", "Paste image", the inbox's "Stop" and "Archive", the sent-history sheet's "Sent messages", "Copy", "Put back in the box"; each gesture action's name for Settings: "Next window or tab", "Previous window or tab", "Next pane", "Previous pane", "Next session or workspace", "Previous session or workspace", "Bigger text", "Smaller text", "Paste", "Scroll back", "Nothing"; the reconnect strip's link names `linkChat` "Chat" and `linkTerminal` "Terminal"; empty states; errors) and functions for strings with values (`copy.needYou(n)` → `"1 needs you"`/`"3 need you"`; `copy.cannotReach(machine)` → `"Can't reach testlaptop. It may be asleep or offline. Porthole keeps trying."`; `copy.contextLeft(n)` → `"40% of the context left"`). Views never write literal user-facing strings; Task E1's grep checks it.
 
 - [ ] **Step 1: Failing test.**
 
@@ -1153,13 +1259,103 @@ test("plural forms", () => {
 git add web/src/lib/copy.js web/test/unit/copy.test.js && git commit -m "web: all on-screen words in one place, banned-word test" && git push
 ```
 
+## Task A9: Terminal gestures, Ctrl latch, text size (pure logic)
+
+**Files:** Create `web/src/lib/gestures.js`, `web/test/unit/gestures.test.js`. No imports from other A tasks (it returns step names; D3 turns them into bytes with A3's `stepBytes`), so it runs in parallel with A1-A8.
+
+**Interface** (SPEC 4.4: toolbar and gestures, remappable in Settings).
+- `createRecognizer()` → `{down(t, points), move(t, points), up(t, points)}`; `t` is ms, `points` = every touch still on the screen as `{id, x, y}` (for `up`, the touches left after the lift). Each call returns `Event[]`: `{gesture}` with `gesture` one of `"swipe1-left" | "swipe1-right" | "swipe2-left" | "swipe2-right" | "swipe2-up" | "swipe2-down" | "pinch-in" | "pinch-out" | "double-tap"`, or `{gesture: "drag", dy}` while one finger moves vertically. Rules: a swipe is decided when the last finger lifts: average movement ≥ 60 px, the main direction at least twice the other, within 800 ms; one or two fingers counted at the moment the second finger went down (or one). Two fingers whose distance grows to ≥ 1.2× (or shrinks to ≤ 0.83×) while their average movement stays under 60 px is a pinch. A tap = one finger, < 250 ms, < 10 px movement; two taps < 300 ms apart and < 24 px apart = `double-tap` on the second lift (the first tap returns nothing). One finger that moves ≥ 12 px vertically with `|dy| ≥ 2|dx|` becomes a drag: every later `move` returns `{gesture: "drag", dy}` (px since the previous event, positive = finger moving down) and its lift returns nothing.
+- `ACTIONS` = `["window-next", "window-prev", "pane-next", "pane-prev", "session-next", "session-prev", "text-bigger", "text-smaller", "paste", "scroll", "none"]`. `DEFAULT_GESTURES` (SPEC 4.4) = `{"swipe1-left": "window-next", "swipe1-right": "window-prev", "swipe2-left": "pane-next", "swipe2-right": "pane-prev", "swipe2-up": "session-next", "swipe2-down": "session-prev", "pinch-out": "text-bigger", "pinch-in": "text-smaller", "double-tap": "paste", "drag": "scroll"}`. `mergeGestureMap(saved)` → the defaults with every valid saved entry laid over them (unknown gesture or action names ignored); Settings (D6) saves only the changed entries as the `gestures` field of `localStorage` `porthole:settings` (this device's preference, SPEC 4.2 item 5), and D3 reads `mergeGestureMap(settings.gestures)`. `gestureAction(gesture, map)` → action.
+- `navPlan(action, kind)` (`kind` = the session's `"tmux" | "herdr"`) → what the terminal does: tmux `window-next` / `window-prev` → `{steps: ["prefix", "n"]}` / `{steps: ["prefix", "p"]}` (the tmux window changes for the session, so the desk sees it too, as SPEC 4.4 says); tmux `pane-next` → `{steps: ["prefix", "o"]}`; tmux `pane-prev` → `{steps: ["prefix", ":", "text:select-pane -t :.-", "Enter"]}`; `session-*` on tmux, and `window-*` / `pane-*` / `session-*` on herdr → `{navigate: {level, dir}}` with `level` `"window" | "pane" | "session"` and `dir` `1 | -1` (D3 opens the neighbour from A7's `neighbour()`); `text-*`, `paste`, `scroll` → `{local: action}`; `none` → `null`.
+- `createCtrlLatch({doubleMs = 350})` → `{tap(t) → state, apply(data) → Uint8Array, state()}` with states `"off" | "once" | "locked"`: a tap turns `off` into `once`; a second tap within `doubleMs` turns `once` into `locked`; any other tap returns to `off`. `apply` turns a single letter (or `@ [ \ ] ^ _ space`) into its control byte while `once` or `locked` (`once` then falls back to `off` after one key), and otherwise returns the UTF-8 bytes unchanged.
+- `wheelBytes(lines, col, row)` → SGR mouse-wheel bytes for tmux (`set -g mouse on`, SPEC 4.4): `lines < 0` = scroll back, `|lines|` copies of `\x1b[<64;col;rowM`; `lines > 0` = `\x1b[<65;col;rowM`.
+- `FONT_STEPS = [10, 12, 14, 16, 18, 20, 24, 28]` (terminal px; default 14); `nextFontSize(px, dir)` → the next step up or down, clamped.
+
+- [ ] **Step 1: Failing test** `web/test/unit/gestures.test.js`:
+
+```js
+import { expect, test } from "bun:test";
+import { DEFAULT_GESTURES, createCtrlLatch, createRecognizer, gestureAction, mergeGestureMap, navPlan, nextFontSize, wheelBytes } from "../../src/lib/gestures.js";
+
+const p = (id, x, y) => ({ id, x, y });
+const run = (frames, r = createRecognizer()) => frames.flatMap(([kind, t, pts]) => r[kind](t, pts)).map((e) => (e.gesture === "drag" ? `drag ${e.dy}` : e.gesture));
+const text = (u8) => new TextDecoder().decode(u8);
+
+test("one-finger swipes", () => {
+  expect(run([["down", 0, [p(1, 300, 400)]], ["move", 100, [p(1, 200, 405)]], ["up", 150, []]])).toEqual(["swipe1-left"]);
+  expect(run([["down", 0, [p(1, 100, 400)]], ["move", 100, [p(1, 200, 395)]], ["up", 150, []]])).toEqual(["swipe1-right"]);
+});
+test("two-finger swipes, sideways and up/down", () => {
+  expect(run([["down", 0, [p(1, 100, 400), p(2, 100, 500)]], ["move", 100, [p(1, 200, 402), p(2, 200, 498)]], ["up", 150, []]])).toEqual(["swipe2-right"]);
+  expect(run([["down", 0, [p(1, 200, 500), p(2, 300, 500)]], ["move", 100, [p(1, 202, 400), p(2, 298, 400)]], ["up", 150, []]])).toEqual(["swipe2-up"]);
+});
+test("pinch", () => {
+  expect(run([["down", 0, [p(1, 200, 400), p(2, 260, 400)]], ["move", 100, [p(1, 170, 400), p(2, 290, 400)]], ["up", 150, []]])).toEqual(["pinch-out"]);
+  expect(run([["down", 0, [p(1, 150, 400), p(2, 310, 400)]], ["move", 100, [p(1, 200, 400), p(2, 260, 400)]], ["up", 150, []]])).toEqual(["pinch-in"]);
+});
+test("double tap fires once, on the second tap", () => {
+  expect(run([["down", 0, [p(1, 100, 100)]], ["up", 80, []], ["down", 200, [p(1, 104, 102)]], ["up", 260, []]])).toEqual(["double-tap"]);
+  expect(run([["down", 0, [p(1, 100, 100)]], ["up", 80, []], ["down", 600, [p(1, 104, 102)]], ["up", 660, []]])).toEqual([]);
+});
+test("vertical drag reports movement and never becomes a swipe", () => {
+  expect(run([["down", 0, [p(1, 100, 300)]], ["move", 50, [p(1, 101, 330)]], ["move", 100, [p(1, 101, 360)]], ["up", 150, []]])).toEqual(["drag 30", "drag 30"]);
+});
+test("small slow movement is nothing", () => {
+  expect(run([["down", 0, [p(1, 100, 100)]], ["move", 300, [p(1, 105, 103)]], ["up", 600, []]])).toEqual([]);
+});
+test("the gesture map: defaults per SPEC 4.4, remapping keeps only valid entries", () => {
+  expect(gestureAction("swipe1-left", DEFAULT_GESTURES)).toBe("window-next");
+  expect(gestureAction("swipe2-up", DEFAULT_GESTURES)).toBe("session-next");
+  expect(gestureAction("double-tap", DEFAULT_GESTURES)).toBe("paste");
+  const m = mergeGestureMap({ "double-tap": "none", "pinch-in": "bogus", nope: "paste" });
+  expect(m).toEqual({ ...DEFAULT_GESTURES, "double-tap": "none" });
+});
+test("what each action does in tmux and herdr", () => {
+  expect(navPlan("window-next", "tmux")).toEqual({ steps: ["prefix", "n"] });
+  expect(navPlan("pane-prev", "tmux")).toEqual({ steps: ["prefix", ":", "text:select-pane -t :.-", "Enter"] });
+  expect(navPlan("session-next", "tmux")).toEqual({ navigate: { level: "session", dir: 1 } });
+  expect(navPlan("window-prev", "herdr")).toEqual({ navigate: { level: "window", dir: -1 } });
+  expect(navPlan("paste", "tmux")).toEqual({ local: "paste" });
+  expect(navPlan("none", "tmux")).toBeNull();
+});
+test("Ctrl: one tap for one key, double tap locks, tap again unlocks", () => {
+  const c = createCtrlLatch();
+  expect(c.tap(0)).toBe("once");
+  expect([...c.apply("c")]).toEqual([3]);
+  expect(c.state()).toBe("off");
+  expect(text(c.apply("c"))).toBe("c");
+  c.tap(1000); expect(c.tap(1200)).toBe("locked");
+  expect([...c.apply("a"), ...c.apply("b")]).toEqual([1, 2]);
+  expect(c.tap(5000)).toBe("off");
+  c.tap(6000); expect(c.tap(6500)).toBe("off");
+});
+test("scroll back becomes mouse-wheel bytes", () => {
+  expect(text(wheelBytes(-2, 10, 5))).toBe("\x1b[<64;10;5M\x1b[<64;10;5M");
+  expect(text(wheelBytes(1, 1, 1))).toBe("\x1b[<65;1;1M");
+});
+test("text size steps", () => {
+  expect([nextFontSize(14, 1), nextFontSize(14, -1), nextFontSize(28, 1), nextFontSize(10, -1)]).toEqual([16, 12, 28, 10]);
+});
+```
+
+- [ ] **Step 2: Run, expect FAIL.** `bun test web/test/unit/gestures.test.js`
+- [ ] **Step 3: Implement** (track touches by `id`; the gesture's finger count is the most fingers down at once; compare against the positions at the first `down`).
+- [ ] **Step 4: Run, expect PASS** (same command).
+- [ ] **Step 5: Commit and push.**
+
+```bash
+git add web/src/lib/gestures.js web/test/unit/gestures.test.js && git commit -m "web: terminal gesture recogniser, remappable gesture map, Ctrl latch, wheel bytes" && git push
+```
+
 ---
 
 ## Task B1: API client, sockets, machine links, fleet, native bridge
 
 **Files:** Create `web/src/net/api.js`, `socket.js`, `machine.js`, `fleet.js`, `bridge.js`, `web/test/unit/net.test.js`, `web/test/unit/bridge.test.js`. Uses A1 (`outbox`), A2 (`reconnect`), A7 (`tree`, `inboxmodel`), A8 (`copy`).
 
-**Interfaces** (behaviour fixed in "Rules every module follows"): `createApi({origin, fetch, timeoutMs, setTimeout})`; `openSocket({url, WebSocket, reconnector deps, onOpen, onMessage, onState, binaryType})` → `{send(data), nudge(), close()}` (uses `createReconnector`; `close()` stops reconnecting); `createMachine({name, origin, deviceId, deps})` → `{name, origin, state(), tree(), inbox(), api, subscribe(fn), start(), stop(), nudge()}`; `createFleet({machines, deviceId, deps})` → `{links(), sidebar(open), inbox(), anyDown(), subscribe(fn), nudgeAll(), stop()}`; `createBridge(win)` → `{available, call(method, args), on(event, fn)}`. Every dependency (`fetch`, `WebSocket`, timers, `crypto.randomUUID`, `localStorage`) is passed in; `main.js` passes the real ones.
+**Interfaces** (behaviour fixed in "Rules every module follows"): `createApi({origin, fetch, timeoutMs, setTimeout})`; `openSocket({url, WebSocket, reconnector deps, onOpen, onMessage, onState, binaryType})` → `{send(data), nudge(), close()}` (uses `createReconnector`; `close()` stops reconnecting); `createMachine({name, origin, deviceId, deps})` → `{name, origin, state(), tree(), inbox(), api, subscribe(fn), start(), stop(), nudge()}`; `createFleet({machines, deviceId, deps})` → `{links(), sidebar(open), inbox(), anyDown(), subscribe(fn), nudgeAll(), stop(), reportLink(name, state, retry?) → drop()}`; `createBridge(win)` → `{available, call(method, args), on(event, fn)}`. Every dependency (`fetch`, `WebSocket`, timers, `crypto.randomUUID`, `localStorage`) is passed in; `main.js` passes the real ones.
+
+**The `reportLink` contract** (the one D1 hands views as `ctx.reportLink`, see "How views meet without shared files"): `fleet.reportLink(name, state, retry?)` adds or updates one view link (`name` a `copy` label such as `copy.linkChat`, `state` `"connecting" | "up" | "down"`, `retry` the view socket's `nudge`) and returns `drop()`, which removes it. `links()` returns the machine links first, then the view links, each `{name, state, retry}`; `anyDown()` is true when any of them is not `"up"`; `nudgeAll()` also calls every view link's `retry`; every change notifies `subscribe` listeners. D1's strip reads only `links()`.
 
 - [ ] **Step 1: Failing tests.** `web/test/unit/net.test.js`:
 
@@ -1167,6 +1363,7 @@ git add web/src/lib/copy.js web/test/unit/copy.test.js && git commit -m "web: al
 import { expect, test } from "bun:test";
 import { createApi } from "../../src/net/api.js";
 import { createMachine } from "../../src/net/machine.js";
+import { createFleet } from "../../src/net/fleet.js";
 
 const O = "https://testdesk.example.ts.net";
 function fakeFetch(answers) {
@@ -1200,21 +1397,38 @@ test("hostd's error text is passed through", async () => {
 
 class FakeWs { static all = []; constructor(url) { this.url = url; this.sent = []; FakeWs.all.push(this); } send(d) { this.sent.push(d); } close() { this.onclose?.({}); } }
 
-test("machine link: device query, refetch on every open, ack every notify", async () => {
+test("machine link: device query, tree from the sessions push (no polling), ack every notify", async () => {
   FakeWs.all = [];
-  const { f, calls } = fakeFetch(Array(4).fill(0).map(() => ({ status: 200, body: { machine: "testdesk", sessions: [], sources: [], scannedAt: "", items: [] } })));
+  const { f, calls } = fakeFetch(Array(4).fill(0).map(() => ({ status: 200, body: { items: [] } })));
   const timers = []; const m = createMachine({ name: "testdesk", origin: O, deviceId: "web-abc123def456", deps: { fetch: f, WebSocket: FakeWs, setTimeout: (fn, ms) => timers.push({ fn, ms }), clearTimeout() {} } });
   m.start();
   const ws = FakeWs.all[0];
   expect(ws.url).toBe("wss://testdesk.example.ts.net/v1/events?device=web-abc123def456&since=0");
   ws.onopen?.({}); await Bun.sleep(0);
-  expect(calls.map((c) => c.url.replace(O, ""))).toEqual(["/v1/sessions", "/v1/inbox"]);
+  expect(calls.map((c) => c.url.replace(O, ""))).toEqual(["/v1/inbox"]);
+  const tree = { machine: "testdesk", sessions: [{ id: "tmux:t:main:0.0" }], sources: [], scannedAt: "2026-10-13T10:00:00Z" };
+  ws.onmessage?.({ data: JSON.stringify({ type: "sessions", tree }) });
+  expect(m.tree()).toEqual(tree);
+  expect(timers).toEqual([]);
   ws.onmessage?.({ data: JSON.stringify({ type: "notify", id: 7, itemId: "i", title: "t", body: "b", options: [], at: "" }) });
   expect(ws.sent.map((d) => JSON.parse(d))).toEqual([{ type: "ack", id: 7 }]);
   ws.close(); expect(m.state()).toBe("down"); expect(timers.at(-1).ms).toBe(1000);
   timers.at(-1).fn(); FakeWs.all[1].onopen?.({}); await Bun.sleep(0);
   expect(FakeWs.all[1].url).toContain("since=7");
-  expect(calls.length).toBe(4); expect(m.state()).toBe("up");
+  expect(calls.length).toBe(2); expect(m.state()).toBe("up");
+  expect(calls.some((c) => c.url.endsWith("/v1/sessions"))).toBe(false);
+});
+
+test("fleet: views report their own links; the strip sees them; drop removes them", () => {
+  const fleet = createFleet({ machines: [], deviceId: "web-abc123def456", deps: { fetch: async () => new Response("{}"), WebSocket: FakeWs, setTimeout() {}, clearTimeout() {} } });
+  let nudged = 0; let changes = 0; fleet.subscribe(() => changes++);
+  const drop = fleet.reportLink("Terminal", "down", () => nudged++);
+  expect(fleet.links()).toEqual([{ name: "Terminal", state: "down", retry: expect.any(Function) }]);
+  expect(fleet.anyDown()).toBe(true);
+  fleet.nudgeAll(); expect(nudged).toBe(1);
+  fleet.reportLink("Terminal", "up"); expect(fleet.anyDown()).toBe(false);
+  drop(); expect(fleet.links()).toEqual([]);
+  expect(changes).toBe(3);
 });
 ```
 
@@ -1244,7 +1458,7 @@ test("with PortholeNative: request/response by id, events by name, unknown metho
 ```
 
 - [ ] **Step 2: Run, expect FAIL.** `bun test web/test/unit/net.test.js web/test/unit/bridge.test.js`
-- [ ] **Step 3: Implement.** `machine.js` builds the events URL from `origin` (`https:` → `wss:`), keeps `lastNotifyId` in memory (the page's own queue; P2 replays unacked ones anyway), refetches sessions and inbox on each open, applies `{type:"inbox", items}` and `{type:"sessions"}`-style tree pushes if P2 sends them (else polls `GET /v1/sessions` every 10 s while up; P2's events contract decides, read on the merged branch), and on `"up"` flushes `outbox.held(origin)` by re-posting each with its own `clientMsgId`. `fleet.js` creates one link per machine, calls `nudgeAll()` on `window` `online`, `visibilitychange` → visible and bridge `network`. Machine list: bridge `machines()` when `available`, else `porthole:machines`, else first-run discovery (`GET /v1/machine`, `GET /v1/config` → `peers`, each peer's `GET /v1/machine`).
+- [ ] **Step 3: Implement.** `machine.js` builds the events URL from `origin` (`https:` → `wss:`), keeps `lastNotifyId` in memory (the page's own queue; P2 replays unacked ones anyway), fetches `GET /v1/inbox` on each open, takes the session tree only from the `{type:"sessions", tree}` message hostd sends on every open and on every change (P1: `server/src/features/sessions.ts` lines 20-39; no polling), applies `{type:"inbox", items}`, and on `"up"` flushes `outbox.held(origin)` by re-posting each with its own `clientMsgId`. `fleet.js` creates one link per machine, keeps the view links from `reportLink`, calls `nudgeAll()` on `window` `online`, `visibilitychange` → visible and bridge `network`. Machine list: bridge `machines()` when `available`, else `porthole:machines`, else first-run discovery (`GET /v1/machine`, `GET /v1/config` → `peers`, each peer's `GET /v1/machine`).
 - [ ] **Step 4: Run, expect PASS** (same command), then the whole unit suite: `bun run test:web`.
 - [ ] **Step 5: Commit and push.**
 
@@ -1257,11 +1471,16 @@ git add web/src/net/api.js web/src/net/socket.js web/src/net/machine.js web/src/
 **Files:** Create `web/test/e2e/tsproxy.ts`, `cdp.ts`, `browser.ts`, `stack.ts`, `readable.ts`, `web/test/e2e/smoke.test.ts`. Read `skill://verify-web-ui-headless-cdp` first and follow it where it differs from nothing below; never point anything at ports 9224 or 9225.
 
 **Design.** The page must load from `https://<machine>.<tailnet>.ts.net` because hostd only accepts that origin shape (V3). So:
-- `stack.ts` → `startStack({fixtures})`: a `Scratch`, two test hostds via `startTestHostd(s, FACTORIES, {origin, peers})` — testdesk (`origin: "https://testdesk.example.ts.net"`, `peers: ["https://testlaptop.example.ts.net"]`) and testlaptop (the mirror) — each with an `ompPane` per fixture transcript on its own scratch tmux socket; `FACTORIES` is the exported production feature list from the merged P2 branch's `server/src/main.ts` (**GUESS** that P2 exports it; if not, C1 lists the factories by name from that file, including G1's `webFeature`). Returns `{desk, laptop, proxies, chrome, page, stop}`.
-- `tsproxy.ts` → `startProxy({target: TestHostd, cert, key})`: Bun TLS server on `127.0.0.1:0` standing in for `tailscale serve`. It forwards every request to the hostd adding `X-Porthole-Local: <token>` (the local-identity path, V3) and forwards WebSocket upgrades by opening a Bun `WebSocket` to hostd with the page's `Origin` plus that header, piping text and binary frames both ways. Test controls: `drop(prefix)` closes every open socket whose path starts with `prefix`; `block(prefix, on)` answers new upgrades on `prefix` with 503 while `on`; `failNext(prefix)` resets the next HTTP request on `prefix` (connection closed, no answer); `count(prefix)` = upgrades seen.
+- `stack.ts` → `startStack({fixtures})`: a `Scratch`, two test hostds via `startTestHostd(s, FACTORIES, {origin, peers})` — testdesk (`origin: "https://testdesk.example.ts.net"`, `peers: ["https://testlaptop.example.ts.net"]`) and testlaptop (the mirror) — each with one pane per fixture on its own scratch tmux socket; `FACTORIES` is the exported production feature list from the merged P2 branch's `server/src/main.ts` (**GUESS** that P2 exports it; if not, C1 lists the factories by name from that file, including G1's `webFeature`). Returns a `Stack`. **This is the whole interface group D may use**; a D task that needs anything else asks the orchestrator, which adds it here (C1's files stay C1's):
+  - **Fixture kinds** (strings in `fixtures.desk` / `fixtures.laptop`): `"<file>.jsonl"` → `ompPane(s, <file name without .jsonl>, <copy of web/test/fixtures/<file>>)`, the fake omp holding that transcript, with no live-inbox folder, so sends take the tmux route and come back `delivered` (P1 `server/test/deliver.test.ts` shows both routes); the `status-*.jsonl` fixtures are this kind. `"shell:<name>"` → `pane(s, <name>, "/bin/sh")` plus a second window (index 1, also `/bin/sh`) in the same tmux session, so the terminal tree has two windows and the gesture e2e has somewhere to go. `"repo:<name>"` → a scratch git repo `<scratch>/<name>` with one staged edit, one unstaged edit containing a 200-character line, and one new file, plus a plain `/bin/sh` pane whose cwd is that repo.
+  - **Handles:** `desk`, `laptop` (the `TestHostd`s), `proxies: {desk, laptop}`, `chrome` (`{pid, port, profileDir, stop}`), `page` (the CDP page), `stop()` (idempotent).
+  - **Helpers** (`m` is `"desk" | "laptop"`, `f` a fixture string as passed in): `chatUrl(m, f)`, `termUrl(m, f)`, `changesUrl(m, f)` → `https://test<m>.example.ts.net/` + A7's `href(...)` for that fixture's session; `sessionId(m, f)` → the id hostd reports for that fixture's pane; `killPane(m, f)` → `kill-pane` on that exact pane, on its scratch socket; `append(m, f, line)` → append one JSONL line to that fixture's transcript copy; `screen(m, f)` → the text of `GET /v1/sessions/:id/screen`; `tmuxFormat(m, f, format)` → `tmux display-message -p -t =<session> <format>` on that scratch socket (read-only, e.g. `"#{window_index}"`); `setLiveVoice(m, f, on)` → `Scratch.setLiveVoicePids(on ? [that omp's pid] : [])` (the fake `pactl`; never real live voice, SPEC 7), then waits until `GET /v1/sessions` reports `liveVoice === on` for that session; `emitQuestion(m, f, {qid, questions})` → writes a `question_open` line for that pane to the hostd's events socket at `config.runtimeDir/events.sock`, the way P2's own tests do; `api(m, path, init?)` → the parsed JSON of a request to that hostd through its proxy with `X-Porthole: 1`; `waitFor(fn, ms = 10000)` → polls an async predicate every 100 ms and throws with the last value on timeout.
+  - **One more helper:** `emitEvent(m, f, event)` → writes any other omp extension event for that fixture's pane (`{type: "working"}`, `{type: "turn_finished"}`, `{type: "session_end"}`, with the pane's omp `pid` and the current time filled in) to the same events socket, exactly as `emitQuestion` does; D4 uses it to put cards in Working and Done without depending on what the status transcripts imply.
+  - **Proxy controls** (`proxies.desk`, `proxies.laptop`): `drop(prefix)`, `block(prefix, on)`, `failNext(prefix)`, `count(prefix)`, `lastUpgradePath(prefix)`, `requests(prefix)` → every HTTP request seen on `prefix` as `{method, path, body}` (body parsed when it is JSON), oldest first.
+- `tsproxy.ts` → `startProxy({target: TestHostd, cert, key})`: Bun TLS server on `127.0.0.1:0` standing in for `tailscale serve`. It forwards every request to the hostd adding `X-Porthole-Local: <token>` (the local-identity path, V3) and forwards WebSocket upgrades by opening a Bun `WebSocket` to hostd with the page's `Origin` plus that header, piping text and binary frames both ways. Test controls: `drop(prefix)` closes every open socket whose path starts with `prefix`; `block(prefix, on)` answers new upgrades on `prefix` with 503 while `on`; `failNext(prefix)` resets the next HTTP request on `prefix` (connection closed, no answer); `count(prefix)` = upgrades seen; `lastUpgradePath(prefix)` = the path and query of the newest upgrade on `prefix`; `requests(prefix)` as above.
 - Certificate: `openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=porthole-test" -addext "subjectAltName=DNS:testdesk.example.ts.net,DNS:testlaptop.example.ts.net" -keyout <scratch>/key.pem -out <scratch>/cert.pem`, run with `Bun.spawnSync`.
-- `browser.ts` → `startChrome({scratch, map})`: `chromium --headless=new --user-data-dir=<scratch>/chrome --remote-debugging-port=0 --no-first-run --no-default-browser-check --ignore-certificate-errors --host-resolver-rules="MAP testdesk.example.ts.net:443 127.0.0.1:<deskProxyPort>,MAP testlaptop.example.ts.net:443 127.0.0.1:<laptopProxyPort>" about:blank`; records the child PID; reads `<scratch>/chrome/DevToolsActivePort` for the port; `stop()` kills that exact PID (SIGTERM, then SIGKILL after 3 s) and nothing else.
-- `cdp.ts` → `connectPage(port)`: one WebSocket to the first page target; `send(method, params)`, `on(event, fn)`, helpers `goto(url)`, `phone()` (`Emulation.setDeviceMetricsOverride {width: 412, height: 915, deviceScaleFactor: 2.625, mobile: true}` + `Emulation.setTouchEmulationEnabled`), `wide()` (1280 × 800), `eval(expr)` (`Runtime.evaluate`, `awaitPromise`, `returnByValue`, throws on exception), `waitFor(expr, ms)`, `click(selector)`, `type(text)` (`Input.insertText`), `key(name)`, `reload()`, `onNewDocument(source)` (`Page.addScriptToEvaluateOnNewDocument`), `shot(name)` (`Page.captureScreenshot` once into `web/test/.out/<name>.png`; a failure is logged and skipped, never retried).
+- `browser.ts` → `startChrome({scratch, map})`: `chromium --headless=new --user-data-dir=<scratch>/chrome --remote-debugging-port=0 --no-first-run --no-default-browser-check --ignore-certificate-errors --host-resolver-rules="MAP testdesk.example.ts.net:443 127.0.0.1:<deskProxyPort>,MAP testlaptop.example.ts.net:443 127.0.0.1:<laptopProxyPort>" about:blank`; records the child PID; reads `<scratch>/chrome/DevToolsActivePort` for the port; returns `{pid, port, profileDir: "<scratch>/chrome", stop()}`; `stop()` kills that exact PID (SIGTERM, then SIGKILL after 3 s), awaits its exit, and touches nothing else.
+- `cdp.ts` → `connectPage(port)`: one WebSocket to the first page target; `send(method, params)`, `on(event, fn)`, helpers `goto(url)`, `phone()` (`Emulation.setDeviceMetricsOverride {width: 412, height: 915, deviceScaleFactor: 2.625, mobile: true}` + `Emulation.setTouchEmulationEnabled`), `wide()` (1280 × 800), `eval(expr)` (`Runtime.evaluate`, `awaitPromise`, `returnByValue`, throws on exception), `waitFor(expr, ms)`, `click(selector)`, `type(text)` (`Input.insertText`), `key(name)`, `reload()`, `onNewDocument(source)` (`Page.addScriptToEvaluateOnNewDocument`), `touch(type, points)` (`Input.dispatchTouchEvent`, `points` = `[{x, y, id}]`), `swipe({x, y, dx, dy, fingers = 1, ms = 200})` (`touchStart` with `fingers` points 60 px apart, 8 evenly spaced `touchMove`s over `ms`, `touchEnd`), `setFiles(selector, paths)` (`DOM.getDocument` → `DOM.querySelector` → `DOM.setFileInputFiles`), `shot(name)` (`Page.captureScreenshot` once into `web/test/.out/<name>.png`; a failure is logged and skipped, never retried).
 - `readable.ts` → `readable(page, selector)`: evaluates in the page and returns the problems found (empty array = readable): element missing or `display:none`/zero size; document wider than the viewport (`documentElement.scrollWidth > innerWidth`); any text-bearing descendant with computed `font-size` < 14 px (12 px allowed only for `.meta` captions, which are never the only copy of a fact); any descendant whose content is clipped (`scrollWidth > clientWidth + 1` with `overflow: hidden`) unless it is inside `.table-scroll` or has `text-overflow: ellipsis` and a `title`; any interactive element smaller than 44 × 44 CSS px (the craft-floor minimum; 48 px is the design target, Needs Ben 4).
 
 - [ ] **Step 1: Check the guesses.** `command -v chromium` (G-guess 2) and, in `smoke.test.ts`, the first assertion that `https://testdesk.example.ts.net/` loads through the mapped proxy (G-guess 1). If Chromium ignores the port in the rule (attempt 1 fails), attempt 2: start the proxies on fixed free ports and use `--host-resolver-rules="MAP *.example.ts.net 127.0.0.1"` plus the page URL `https://testdesk.example.ts.net:<port>/` with hostd's `origin` override set to the same `https://…:<port>` — **only if** `config.ts` accepts a port (V3 says it does not, so this fallback needs a test-only config override; if neither works, stop and report).
@@ -1269,7 +1488,13 @@ git add web/src/net/api.js web/src/net/socket.js web/src/net/machine.js web/src/
 
 ```ts
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { startStack, type Stack } from "./stack";
+
+// Read-only: every process whose command line carries this exact argument.
+const withArg = (arg: string) => readdirSync("/proc").filter((d) => /^\d+$/.test(d)).filter((pid) => {
+  try { return readFileSync(`/proc/${pid}/cmdline`, "utf8").split("\0").includes(arg); } catch { return false; }
+});
 
 let st: Stack;
 beforeAll(async () => { st = await startStack({ fixtures: { desk: ["chat-p3.jsonl"], laptop: [] } }); });
@@ -1288,14 +1513,19 @@ test("an API call from the page reaches hostd with X-Porthole", async () => {
   expect(r.machine).toBe("testdesk");
 });
 
-test("cleanup kills only the recorded Chromium PID", async () => {
-  expect(st.chrome.pid).toBeGreaterThan(0);
+test("stop() ends the recorded Chromium and leaves nothing on its profile", async () => {
+  const { pid, profileDir } = st.chrome;
+  expect(pid).toBeGreaterThan(0);
+  expect(withArg(`--user-data-dir=${profileDir}`)).toContain(String(pid));
+  await st.stop();
+  expect(existsSync(`/proc/${pid}`)).toBe(false);
+  expect(withArg(`--user-data-dir=${profileDir}`)).toEqual([]);
 });
 ```
 
 - [ ] **Step 3: Run, expect FAIL** (modules missing): `bun test --timeout 120000 web/test/e2e/smoke.test.ts`
 - [ ] **Step 4: Implement** the five modules. `stop()` order: CDP socket, Chromium (exact PID), proxies, hostds, scratch tmux servers (`Scratch` cleanup), scratch folder.
-- [ ] **Step 5: Run, expect PASS** (same command). Then confirm no Chromium was left: `pgrep -a -f porthole-test-` must print nothing (read-only check; never `pkill`).
+- [ ] **Step 5: Run, expect PASS** (same command). The last smoke test is the leftover check: it matches only the recorded Chromium PID and processes started with this run's own `--user-data-dir=<scratch>/chrome`, so another session's browser (or Ben's) can never match. No `pgrep -f` / `pkill` by pattern anywhere.
 - [ ] **Step 6: Commit and push.**
 
 ```bash
@@ -1307,16 +1537,18 @@ git add web/test/e2e/tsproxy.ts web/test/e2e/cdp.ts web/test/e2e/browser.ts web/
 Every D task below follows the same five steps, so they are written once here and each task lists only its files, behaviour and test:
 
 1. Re-read `skill://impeccable/reference/craft-floor.md` and the wireframe for the screen above.
-2. Write the task's e2e test file exactly as given; run it and watch it fail: `bun test --timeout 120000 web/test/e2e/<file>`.
+2. Write the task's e2e test file exactly as given, then send it to the **e2e queue** (see "Parallel groups"; never run it yourself) and expect it to fail: the queue runs `bun test --timeout 120000 web/test/e2e/<file>` and hands back the output.
 3. Implement the view with `h()`/`mdom` only, strings only from `copy.js`, styles only from tokens.
-4. Run the same command; expect PASS. Then the unit suite (`bun run test:web`) and `bun run typecheck:web`.
+4. Run the unit suite (`bun run test:web`) and `bun run typecheck:web` yourself (Bun only, safe in parallel); then queue the e2e file again and expect PASS (at most 2 failed queue runs, then stop and report).
 5. Commit the listed files by name and push: `git add <listed files> && git commit -m "web: <screen>" && git push`.
 
 ## Task D1: Shell, drawer, reconnect strip
 
 **Files:** `web/src/main.js`, `web/src/views/shell.js`, `web/src/views/sidebar.js`, `web/src/views/strip.js`, `web/styles/shell.css`, `web/test/e2e/drawer.test.ts`.
 
-**Behaviour.** `main.js` boots: settings → bridge → device id (`porthole:device`, `"web-" + 12 random [a-z0-9]`) → machine list → fleet → router; renders the shell (top bar, drawer, strip, `#view`) and lazy-loads the route's view. Drawer per the wireframe and SPEC 4.2: Machines (name, dot + word, need-you count), Inbox (count), active sessions, Chats, Terminals (grouped by machine · project), Settings, Config (one per machine); pull-to-refresh on the list = `fleet.nudgeAll()` + `GET /v1/sessions`. Opens from the menu button or a swipe from the left edge; closes on scrim, Esc, back (a `history.pushState` entry while open) or choosing a row; focus moves into it and returns to the menu button; `inert` on the page behind it. ≥ 840 px: permanent column, no scrim. Strip: when any link is `down` for more than 1 s, a strip under the top bar says `copy.reconnecting` with the machine name(s) (`role="status"`); when all are up again it shows `copy.reconnected` for 2 s and slides away.
+**Behaviour.** `main.js` boots: settings → bridge → device id (`porthole:device`, `"web-" + 12 random [a-z0-9]`) → machine list → fleet → router; renders the shell (top bar, drawer, strip, `#view`) and lazy-loads the route's view, handing it `ctx` with `reportLink` = `fleet.reportLink` (B1's contract); when a view unmounts, D1 calls the `drop()` of every link that view reported. Drawer per the wireframe and SPEC 4.2: Machines (name, dot + word, need-you count), Inbox (count), active sessions, Chats, **Terminals** as the tree from A7's `buildSidebar(...).terminals` (SPEC 4.2 item 4: tmux socket → session → window → pane, herdr workspace → tab → pane; one collapsible `role="group"` per level with its own status dot; tapping a pane row opens its terminal), Settings, Config (one per machine); pull-to-refresh on the list = `fleet.nudgeAll()` plus `GET /v1/sessions` on every machine that is up (SPEC 4.1: this forces a re-scan; the result arrives as the usual `sessions` push, B1). Opens from the menu button or a swipe from the left edge; closes on scrim, Esc, back (a `history.pushState` entry while open) or choosing a row; focus moves into it and returns to the menu button; `inert` on the page behind it. ≥ 840 px: permanent column, no scrim. Strip: when any entry of `fleet.links()` (the machine links **and** the links views reported) is `down` for more than 1 s, a strip under the top bar says `copy.reconnecting` with the names (machine name, or `copy.linkChat` / `copy.linkTerminal`) and a "Try now" button that calls their `retry` (`role="status"`); when all are up again it shows `copy.reconnected` for 2 s and slides away.
+
+Test hooks: each machine's tree is `[data-test=terminals][data-machine=<name>]`; every tree row carries `data-kind` (`socket`, `session`, `window`, `workspace`, `tab`, `pane`) and `data-label`; children sit in a `role="group"` element directly under their row's element; pane rows also carry `data-id` (the session id).
 
 ```ts
 // web/test/e2e/drawer.test.ts
@@ -1325,7 +1557,7 @@ import { readable } from "./readable";
 import { startStack, type Stack } from "./stack";
 
 let st: Stack;
-beforeAll(async () => { st = await startStack({ fixtures: { desk: ["chat-p3.jsonl", "status-needs-you.jsonl"], laptop: ["status-working.jsonl"] } }); await st.page.phone(); await st.page.goto("https://testdesk.example.ts.net/#/inbox"); });
+beforeAll(async () => { st = await startStack({ fixtures: { desk: ["chat-p3.jsonl", "status-needs-you.jsonl", "shell:term-p3"], laptop: ["status-working.jsonl"] } }); await st.page.phone(); await st.page.goto("https://testdesk.example.ts.net/#/inbox"); });
 afterAll(async () => { await st?.stop(); });
 
 test("P3-1: the drawer is readable at 412 px and lists both machines and the groups", async () => {
@@ -1335,6 +1567,20 @@ test("P3-1: the drawer is readable at 412 px and lists both machines and the gro
   const text = await st.page.eval(`document.querySelector("[data-test=drawer]").innerText`);
   for (const s of ["testdesk", "testlaptop", "Inbox", "Chats", "Terminals", "Settings", "Config", "1 needs you"]) expect(text).toContain(s);
   await st.page.shot("p3-1-drawer");
+});
+
+test("Terminals is a tree: socket → session → window → pane (SPEC 4.2)", async () => {
+  const tree = await st.page.eval(`(() => {
+    const t = document.querySelector("[data-test=terminals][data-machine=testdesk]");
+    const kids = (el, kind) => [...el.querySelectorAll(":scope > [role=group] > [data-kind=" + kind + "], :scope > [data-kind=" + kind + "]")];
+    return kids(t, "socket").map((so) => ({ socket: kids(so, "session").map((se) => ({ [se.dataset.label]: kids(se, "window").map((w) => [w.dataset.label, kids(w, "pane").length]) })) }));
+  })()`);
+  expect(tree.length).toBe(1);
+  expect(tree[0].socket.find((x: Record<string, unknown>) => "term-p3" in x)).toEqual({ "term-p3": [["Window 0", 1], ["Window 1", 1]] });
+  await st.page.click(`[data-test=terminals][data-machine=testdesk] [data-kind=pane][data-id="${st.sessionId("desk", "shell:term-p3")}"]`);
+  await st.page.waitFor(`location.hash.startsWith("#/term/testdesk/")`, 5000);
+  await st.page.click("[data-test=menu]");
+  await st.page.waitFor(`document.querySelector("[data-test=drawer]")?.getAttribute("aria-hidden") === "false"`, 5000);
 });
 
 test("Esc closes the drawer and returns focus to the menu button", async () => {
@@ -1356,17 +1602,26 @@ test("P3-3a: cutting the events socket shows Reconnecting… and recovers by its
 
 **Files:** `web/src/dom/mdom.js`, `web/src/views/chat.js`, `web/src/views/composer.js`, `web/src/views/keyrow.js`, `web/styles/chat.css`, `web/test/e2e/chat.test.ts`.
 
-**Behaviour.** Chat WS (`/v1/sessions/:id/chat`) through `openSocket`; backlog then appends via `chatmodel`; "Show earlier" uses `GET …/chat?before=`. Ben's bubbles right on `--mine`; assistant bubbles via `toTree` → `mdom`; `via:"live-voice"` bubbles carry a mic mark and "Said at the desk"; `kind:"tools"` collapsed to `toolSummary` in a `<details>`. Stays scrolled to the bottom unless Ben scrolled up ("New messages ↓" pill). Composer: auto-growing textarea, draft saved on every `input` (A1), restored on mount, Send (≥ 48 px) disabled when empty, Enter = newline on phone and Ctrl+Enter sends on wide; attach button → bridge `pickFile` or `<input type=file>` → `POST /v1/uploads` → chip with the returned path, saved in the draft's `files`; text sent = draft text plus one `@<path>` line per file. Send flow, statuses and messages exactly per "Send flow". Key row (SPEC 4.3): Esc, Tab, ↑, ↓, Ctrl+C, Enter, then the saved shortcuts from `GET /v1/shortcuts`, through `POST …/keys`; when the session has `liveVoice` the row shows `copy.liveVoiceKeys` and the buttons stay usable (hostd routes them).
+**Behaviour.** Chat WS (`/v1/sessions/:id/chat`) through `openSocket`, its state reported with `ctx.reportLink(copy.linkChat, state, nudge)`; backlog then appends via `chatmodel`; "Show earlier" uses `GET …/chat?before=`. Ben's bubbles right on `--mine`; assistant bubbles via `toTree` → `mdom`; `via:"live-voice"` bubbles carry a mic mark and "Said at the desk"; `kind:"tools"` collapsed to `toolSummary` in a `<details>`. Stays scrolled to the bottom unless Ben scrolled up ("New messages ↓" pill). Composer: auto-growing textarea, draft saved on every `input` (A1), restored on mount, Send (≥ 48 px) disabled when empty, Enter = newline on phone and Ctrl+Enter sends on wide. **Attachments (SPEC 4.8):** the attach button opens a menu with "Take a photo" (`<input type=file accept="image/*" capture="environment">`), "Choose a photo" (`accept="image/*"`) and "Choose a file" (any type); in the Android app each item calls bridge `pickFile({source: "camera" | "photo" | "file"})` instead. Pasting an image into the textarea (a `paste` event whose `clipboardData` holds an `image/*` file; plain text pastes are left alone) uploads it the same way. Each file → `POST /v1/uploads` → `{path}` → the **full path** is inserted into the textarea at the cursor on its own line (no `@` or other marker; the message carries the path as text) and listed in the draft's `files` as a chip; removing a chip removes its line. Text sent = the textarea text as it is. Send flow, statuses and messages exactly per "Send flow" (a send made while the machine link is down is held in the outbox and posted once, with its own `clientMsgId`, when B1 reports the link up). **Sent history (SPEC 4.5):** a "Sent messages" button on the composer opens a sheet listing `drafts.sent(origin, sessionId)` (A1, the newest 50 for this session) newest first, each with its time, status word, "Copy" (`navigator.clipboard.writeText`) and "Put back in the box" (replaces the textarea text and saves the draft). **Key row (SPEC 4.3):** `chatKeyRow(shortcuts)` from A3: Esc, ↑, ↓, Enter, Tab, Stop, then this machine's shortcuts from `GET /v1/shortcuts` (minus any with a `C-c` or `prefix` step), each press `POST /v1/sessions/:id/keys` with `{keys: steps}` (Stop = `{keys: ["Esc"]}`). There is no Ctrl+C button in the chat view. When the session's `liveVoice` is true (from the `sessions` push), every key-row button is `disabled` and the row shows `copy.liveVoiceKeys` under it; when it turns false the buttons come back.
+
+Test hooks: key row `[data-test=keyrow]`, each button `data-key` (`Esc`, `Up`, `Down`, `Enter`, `Tab`, `Stop`, or the shortcut's name), the live-voice line `[data-test=keyrow-note]`; sent history `[data-test=sent-open]`, sheet `[data-test=sent]`, rows `[data-test=sent-item]` with `[data-test=sent-copy]` and `[data-test=sent-putback]`; attach button `[data-test=attach]`, inputs `[data-test=attach-camera]`, `[data-test=attach-photo]`, `[data-test=attach-file]` (present in the DOM, visually hidden, labelled by their menu items), chips `[data-test=attach-chip]`.
 
 ```ts
 // web/test/e2e/chat.test.ts
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { readable } from "./readable";
 import { startStack, type Stack } from "./stack";
+
+const CLIP = `window.__copied = []; Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async (t) => { window.__copied.push(t); }, readText: async () => "" } });`;
+const box = `document.querySelector("[data-test=composer] textarea")`;
+const keyRow = `[...document.querySelectorAll("[data-test=keyrow] button")]`;
 
 let st: Stack; let url: string;
 beforeAll(async () => {
   st = await startStack({ fixtures: { desk: ["chat-p3.jsonl"], laptop: [] } });
+  await st.page.onNewDocument(CLIP);
   await st.page.phone();
   url = st.chatUrl("desk", "chat-p3.jsonl");
   await st.page.goto(url);
@@ -1381,6 +1636,73 @@ test("P3-1: user, table, live-delegation and collapsed tools are readable at 412
   expect(await st.page.eval(`[...document.querySelectorAll("[data-test=chat] details")].map(d => [d.open, d.querySelector("summary").innerText])`)).toEqual([[false, "Used 2 tools: read, grep"]]);
   expect(await st.page.eval(`document.querySelectorAll("[data-test=chat] script, [data-test=chat] [onerror]").length`)).toBe(0);
   await st.page.shot("p3-1-chat");
+});
+
+test("key row: Esc ↑ ↓ Enter Tab Stop, Stop sends Esc, no Ctrl+C anywhere in the chat view", async () => {
+  expect(await st.page.eval(`${keyRow}.slice(0, 6).map(b => b.innerText.trim())`)).toEqual(["Esc", "↑", "↓", "Enter", "Tab", "Stop"]);
+  expect(await st.page.eval(`[...document.querySelectorAll("#view button")].filter(b => /ctrl\\s*\\+?\\s*c/i.test(b.innerText) || b.dataset.key === "C-c").length`)).toBe(0);
+  await st.page.click(`[data-test=keyrow] [data-key=Stop]`);
+  await st.waitFor(async () => st.proxies.desk.requests("/v1/sessions/").some((r) => r.method === "POST" && r.path.endsWith("/keys")));
+  const keys = st.proxies.desk.requests("/v1/sessions/").filter((r) => r.method === "POST" && r.path.endsWith("/keys"));
+  expect(keys.at(-1).body).toEqual({ keys: ["Esc"] });
+  expect(keys.at(-1).path).toContain(encodeURIComponent(st.sessionId("desk", "chat-p3.jsonl")));
+});
+
+test("live voice at the desk: the key row is disabled and says why, then comes back", async () => {
+  await st.setLiveVoice("desk", "chat-p3.jsonl", true);
+  await st.page.waitFor(`${keyRow}.every(b => b.disabled)`, 15000);
+  expect(await st.page.eval(`document.querySelector("[data-test=keyrow-note]").innerText`)).toBe("Live voice is on at the desk: keys go to the live panel (Space mutes, Esc ends it)");
+  expect(await readable(st.page, "[data-test=keyrow]")).toEqual([]);
+  await st.page.shot("p3-live-voice-keys");
+  await st.setLiveVoice("desk", "chat-p3.jsonl", false);
+  await st.page.waitFor(`${keyRow}.every(b => !b.disabled) && !document.querySelector("[data-test=keyrow-note]")`, 15000);
+});
+
+test("P3-2d: a send made while the machine is unreachable is held, then goes out exactly once on reconnect", async () => {
+  const sends = () => st.proxies.desk.requests("/v1/sessions/").filter((r) => r.method === "POST" && r.path.endsWith("/send"));
+  const before = sends().length;
+  st.proxies.desk.block("/v1/events", true); st.proxies.desk.drop("/v1/events");
+  await st.page.waitFor(`document.querySelector("[data-test=strip]")?.innerText.includes("Reconnecting…")`, 5000);
+  await st.page.click("[data-test=composer] textarea"); await st.page.type("held until the link is back");
+  await st.page.click("[data-test=send]");
+  await st.page.waitFor(`document.querySelector("[data-test=send-status]")?.innerText.includes("Not sent yet")`, 5000);
+  expect(sends().length).toBe(before);
+  st.proxies.desk.block("/v1/events", false);
+  await st.waitFor(async () => sends().length === before + 1, 20000);
+  await st.page.waitFor(`${box}.value === ""`, 10000);
+  await Bun.sleep(1500);
+  expect(sends().length).toBe(before + 1);
+  expect(sends().at(-1).body.text).toBe("held until the link is back");
+});
+
+test("sent history: the last send can be reopened, copied and put back", async () => {
+  await st.page.click("[data-test=sent-open]");
+  await st.page.waitFor(`document.querySelectorAll("[data-test=sent-item]").length >= 1`, 5000);
+  expect(await readable(st.page, "[data-test=sent]")).toEqual([]);
+  expect(await st.page.eval(`document.querySelector("[data-test=sent-item]").innerText`)).toContain("held until the link is back");
+  await st.page.click("[data-test=sent-item] [data-test=sent-copy]");
+  expect(await st.page.eval("window.__copied")).toEqual(["held until the link is back"]);
+  await st.page.click("[data-test=sent-item] [data-test=sent-putback]");
+  await st.page.waitFor(`${box}.value === "held until the link is back"`, 5000);
+  await st.page.eval(`(() => { const t = ${box}; t.value = ""; t.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+});
+
+test("attachments: a chosen file and a pasted image each put their full uploaded path in the message", async () => {
+  expect(await st.page.eval(`(() => { const c = document.querySelector("[data-test=attach-camera]"), p = document.querySelector("[data-test=attach-photo]"); return [c.accept, c.getAttribute("capture"), p.accept]; })()`)).toEqual(["image/*", "environment", "image/*"]);
+  await st.page.click("[data-test=attach]");
+  await st.page.setFiles("[data-test=attach-file]", [path.join(import.meta.dir, "..", "fixtures", "chat-p3.jsonl")]);
+  await st.page.waitFor(`${box}.value.trim().split("\\n").length === 1`, 10000);
+  await st.page.eval(`(() => { const dt = new DataTransfer(); dt.items.add(new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], "shot.png", { type: "image/png" })); ${box}.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true })); })()`);
+  await st.page.waitFor(`${box}.value.trim().split("\\n").length === 2`, 10000);
+  const lines: string[] = (await st.page.eval(`${box}.value`)).trim().split("\n");
+  expect(st.proxies.desk.requests("/v1/uploads").filter((r) => r.method === "POST").length).toBe(2);
+  for (const l of lines) { expect(l.startsWith("/")).toBe(true); expect(existsSync(l)).toBe(true); }
+  expect(lines[1].endsWith(".png")).toBe(true);
+  expect(await st.page.eval(`document.querySelectorAll("[data-test=attach-chip]").length`)).toBe(2);
+  await st.page.click("[data-test=send]");
+  await st.page.waitFor(`${box}.value === ""`, 10000);
+  const sent = st.proxies.desk.requests("/v1/sessions/").filter((r) => r.method === "POST" && r.path.endsWith("/send")).at(-1);
+  expect(sent.body.text.trim().split("\n")).toEqual(lines);
 });
 
 test("P3-2a: reloading mid-draft keeps the draft", async () => {
@@ -1408,13 +1730,13 @@ test("P3-2c: a send hostd refuses or fails keeps the draft and shows hostd's rea
 });
 ```
 
-(`stack.ts` provides `chatUrl(machine, fixture)`, `termUrl(machine, fixture)`, `sessionId(machine, fixture)`, `killPane(machine, fixture)` and `append(machine, fixture, line)`; add them in C1.)
-
 ## Task D3: Terminal, toolbar, gestures, shortcuts
 
 **Files:** `web/src/views/terminal.js`, `web/styles/terminal.css`, `web/test/e2e/terminal.test.ts`.
 
-**Behaviour.** xterm 6.0.0 + fit addon imported from `/vendor/…/lib/*.mjs`; theme from tokens; font size follows Settings. PTY socket `/v1/sessions/:id/pty?cols=&rows=` through `openSocket` with `binaryType = "arraybuffer"`; output → `term.write`, `term.onData` → UTF-8 bytes → binary frame; fit on `ResizeObserver` → `{type:"resize"}`; `{type:"readonly", reason}` → banner + input disabled; `{type:"screen", text}` → render text (herdr). On reconnect the same session is re-attached (same URL) and the screen is cleared before the new attach's first frame. Toolbar (SPEC 4.4): Esc, Tab, Ctrl, ↑, ↓, ←, →, Paste, Keyboard toggle, then shortcut chips; a sticky Ctrl turns the next typed letter into `C-<letter>`. Gestures: swipe left/right on the terminal area (≥ 60 px horizontal, < 30° from horizontal) → `stepBytes` of `gestureSteps("next"|"prev")` (tmux window switch; shared with the desk, Needs Ben 3); long press → paste. All bytes via `stepBytes(step, settings.tmuxPrefix)`. CSP check: load first with the G1 header as built; if the terminal renders unstyled, the static route keeps `'unsafe-inline'` for styles (already in G1's header) and this task reports which was needed.
+**Behaviour.** xterm 6.0.0 + fit addon imported from `/vendor/…/lib/*.mjs`; theme from tokens; font size from Settings (`settings.termFontPx`, default 14). PTY socket `/v1/sessions/:id/pty?cols=&rows=` through `openSocket` with `binaryType = "arraybuffer"`, its state reported with `ctx.reportLink(copy.linkTerminal, state, nudge)`; output → `term.write`, `term.onData` → `ctrl.apply(data)` (A9 Ctrl latch) → binary frame; fit on `ResizeObserver` → `{type:"resize"}`; `{type:"readonly", reason}` → banner + input disabled; `{type:"screen", text}` → render text (herdr). On reconnect the same session is re-attached (same URL) and the screen is cleared before the new attach's first frame. **Toolbar (SPEC 4.4):** Esc, Tab, Ctrl, ↑, ↓, ←, →, Paste, Keyboard toggle, "Smaller text" / "Bigger text" (`nextFontSize`, saved to Settings, then refit), and "Shortcuts", which opens a panel listing this machine's saved shortcuts (`GET /v1/shortcuts`, all of them, `prefix` and `C-c` included) as large buttons; a tapped shortcut sends `stepBytes(step, settings.tmuxPrefix)` for each step in order. Ctrl is `createCtrlLatch()`: one tap = the next key is a control key, a double tap locks it until tapped again; the button shows the state (`aria-pressed`, the words "Ctrl locked" when locked, never colour alone). **Gestures (SPEC 4.4)** on the terminal area: touch events → `createRecognizer()` → `gestureAction(gesture, mergeGestureMap(settings.gestures))` → `navPlan(action, session kind)`: `{steps}` → `stepBytes` with `settings.tmuxPrefix` (tmux windows and panes change in tmux itself, so the desk sees it too); `{navigate: {level, dir}}` → open `neighbour(sidebar.terminals, id, level, dir)` (A7) when there is one, else nothing; `{local: "text-bigger" | "text-smaller"}` → font step; `{local: "paste"}` → `navigator.clipboard.readText()` (or the bridge) into the terminal; drag → `wheelBytes(-round(dy / cellHeight), col, row)` for tmux sessions (`term.scrollLines` for herdr text). `touch-action: none` on the terminal area keeps the browser from scrolling or zooming the page. CSP check: load first with the G1 header as built; if the terminal renders unstyled, the static route keeps `'unsafe-inline'` for styles (already in G1's header) and this task reports which was needed.
+
+Test hooks: `[data-test=terminal]` carries `data-state` (link state) and `data-font-px`; toolbar `[data-test=toolbar]`, keys `data-key` (`Esc`, `Tab`, `Ctrl`, `Up`, `Down`, `Left`, `Right`, `Paste`, `Keyboard`, `Smaller`, `Bigger`, `Shortcuts`); the Ctrl button's `data-latch` is `off | once | locked`; panel `[data-test=shortcut-panel]`.
 
 ```ts
 // web/test/e2e/terminal.test.ts
@@ -1424,7 +1746,7 @@ import { startStack, type Stack } from "./stack";
 
 let st: Stack;
 beforeAll(async () => {
-  st = await startStack({ fixtures: { desk: ["shell:term-p3"], laptop: [] } }); // "shell:<name>" = a plain /bin/sh scratch pane
+  st = await startStack({ fixtures: { desk: ["shell:term-p3"], laptop: [] } });
   await st.page.phone();
   await st.page.goto(st.termUrl("desk", "shell:term-p3"));
   await st.page.waitFor(`!!document.querySelector("[data-test=terminal] .xterm-screen")`, 10000);
@@ -1439,10 +1761,38 @@ test("typing reaches the session and the toolbar is readable", async () => {
   expect(await readable(st.page, "[data-test=toolbar]")).toEqual([]);
 });
 
-test("toolbar Ctrl+C reaches the session as byte 3", async () => {
-  await st.page.type("sleep 30"); await st.page.click("[data-key='C-c']");
+test("Ctrl: one tap makes the next key a control key; a double tap locks it", async () => {
+  await st.page.type("sleep 30"); await st.page.click("[data-key=Ctrl]");
+  expect(await st.page.eval(`document.querySelector("[data-key=Ctrl]").dataset.latch`)).toBe("once");
+  await st.page.type("c");
+  expect(await st.page.eval(`document.querySelector("[data-key=Ctrl]").dataset.latch`)).toBe("off");
   await st.page.type("echo p3-after-ctrl-c\r");
   await st.waitFor(async () => (await screen()).includes("p3-after-ctrl-c"));
+  await st.page.click("[data-key=Ctrl]"); await st.page.click("[data-key=Ctrl]");
+  expect(await st.page.eval(`document.querySelector("[data-key=Ctrl]").dataset.latch`)).toBe("locked");
+  expect(await st.page.eval(`document.querySelector("[data-key=Ctrl]").innerText`)).toContain("Ctrl locked");
+  await st.page.click("[data-key=Ctrl]");
+  expect(await st.page.eval(`document.querySelector("[data-key=Ctrl]").dataset.latch`)).toBe("off");
+});
+
+test("text size −/+ and the shortcut panel", async () => {
+  expect(await st.page.eval(`document.querySelector("[data-test=terminal]").dataset.fontPx`)).toBe("14");
+  await st.page.click("[data-key=Bigger]");
+  await st.page.waitFor(`document.querySelector("[data-test=terminal]").dataset.fontPx === "16"`, 3000);
+  await st.page.click("[data-key=Smaller]");
+  await st.page.waitFor(`document.querySelector("[data-test=terminal]").dataset.fontPx === "14"`, 3000);
+  await st.page.click("[data-key=Shortcuts]");
+  await st.page.waitFor(`!!document.querySelector("[data-test=shortcut-panel]")`, 3000);
+  expect(await readable(st.page, "[data-test=shortcut-panel]")).toEqual([]);
+  await st.page.key("Escape");
+});
+
+test("one-finger swipe left/right moves the tmux window (the desk sees the same window)", async () => {
+  expect(await st.tmuxFormat("desk", "shell:term-p3", "#{window_index}")).toBe("0");
+  await st.page.swipe({ x: 320, y: 450, dx: -220, dy: 0 });
+  await st.waitFor(async () => (await st.tmuxFormat("desk", "shell:term-p3", "#{window_index}")) === "1");
+  await st.page.swipe({ x: 100, y: 450, dx: 220, dy: 0 });
+  await st.waitFor(async () => (await st.tmuxFormat("desk", "shell:term-p3", "#{window_index}")) === "0");
 });
 
 test("P3-3b: after the connection is cut the terminal re-attaches to the same session", async () => {
@@ -1459,13 +1809,13 @@ test("P3-3b: after the connection is cut the terminal re-attaches to the same se
 });
 ```
 
-(The strip shows for the terminal link too: `strip.js` watches the fleet links and every open live view registers its socket state with the shell through `ctx.reportLink(name, state)`. `lastUpgradePath` and `screen`/`waitFor` are C1 helpers.)
-
 ## Task D4: Inbox
 
 **Files:** `web/src/views/inbox.js`, `web/styles/inbox.css`, `web/test/e2e/inbox.test.ts`.
 
-**Behaviour.** Three sections (Needs you / Working / Done) from `groupInbox` across machines; each card: machine · project, title, body (first 3 lines, "More" expands), age, context left. `answerMode` `buttons` → one button per option (≥ 48 px, full width on phone) → `POST /v1/inbox/:id/answer {optionIndexes: [i]}`, a free-text "Other answer" field → `{text}`; `terminal` → `copy.answerInTerminal` with an "Open terminal" button. Done cards have "Archive" (`POST …/archive`); "Archived" link opens `GET /v1/inbox/archive`. Empty: `copy.inboxEmpty`. Live updates from the events socket's `{type:"inbox"}`.
+**Behaviour.** Three sections (Needs you / Working / Done) from `groupInbox` across machines; inside each section the cards are **grouped by project folder, then by machine** (SPEC 4.6: a project heading, then a machine sub-heading, then that machine's cards). Each card: title, body (first 3 lines, "More" expands), age, and the context-left ring from `contextRing(item)` (A7): a small ring with the percent as text next to it; when `warn` (below 15 %) the ring and its text use `--warn` **and** the text reads "12 % context left" with a warning shape, so colour is never the only signal; no ring when `contextLeft` is null. `answerMode` `buttons` → one button per option (≥ 48 px, full width on phone) → `POST /v1/inbox/:id/answer {optionIndexes: [i]}`, a free-text "Other answer" field → `{text}`; `terminal` → `copy.answerInTerminal` with an "Open terminal" button. **Stop** (SPEC 4.6): every Needs-you and Working card has a "Stop" button that sends `POST /v1/sessions/:sessionId/keys {keys: ["Esc"]}` to that item's machine (P2: Stop is not an inbox route; hostd refuses it for live voice and the card shows hostd's reason). **Archive:** every card, in any section, can be swiped left (≥ 80 px, mostly horizontal; the card follows the finger and snaps back below the threshold) to archive it, and also has an "Archive" button for people who do not swipe; both call `POST /v1/inbox/:id/archive` (P2 accepts any item) and remove the card when hostd answers `{archived: true}`. "Archived" link opens `GET /v1/inbox/archive`. Empty: `copy.inboxEmpty`. Live updates from the events socket's `{type:"inbox"}`.
+
+Test hooks: sections `[data-test=section-needs-you]`, `[data-test=section-working]`, `[data-test=section-done]`; cards `[data-test=inbox-card]` with `data-column`, `data-machine`, `data-item`; project groups `[data-test=inbox-group]` with `data-project`, holding machine blocks `[data-test=inbox-machine]` with `data-machine`; buttons `[data-action=stop]`, `[data-action=archive]`; the ring `[data-test=context-ring]` with `data-warn`.
 
 ```ts
 // web/test/e2e/inbox.test.ts
@@ -1475,10 +1825,13 @@ import { startStack, type Stack } from "./stack";
 
 let st: Stack;
 beforeAll(async () => {
-  st = await startStack({ fixtures: { desk: ["status-needs-you.jsonl", "status-done.jsonl"], laptop: ["status-working.jsonl"] } });
+  st = await startStack({ fixtures: { desk: ["status-needs-you.jsonl", "status-done.jsonl"], laptop: ["status-working.jsonl", "status-done.jsonl"] } });
   await st.emitQuestion("desk", "status-needs-you.jsonl", { qid: "q-p3", questions: [{ id: "q1", question: "Which plan should I use?", options: ["Small", "Large"], multi: false }] });
+  await st.emitEvent("laptop", "status-working.jsonl", { type: "working" });
+  await st.emitEvent("desk", "status-done.jsonl", { type: "turn_finished" });
+  await st.emitEvent("laptop", "status-done.jsonl", { type: "turn_finished" });
   await st.page.phone(); await st.page.goto("https://testdesk.example.ts.net/#/inbox");
-  await st.page.waitFor(`document.querySelectorAll("[data-test=inbox-card]").length >= 2`, 10000);
+  await st.page.waitFor(`document.querySelectorAll("[data-test=inbox-card]").length >= 4`, 10000);
 });
 afterAll(async () => { await st?.stop(); });
 
@@ -1493,9 +1846,31 @@ test("an option button answers through hostd", async () => {
   await st.page.click("[data-test=inbox-card] [data-option='1']");
   await st.page.waitFor(`document.querySelector("[data-test=inbox-card]")?.innerText.includes("Answered: Large")`, 10000);
 });
-```
 
-(`emitQuestion` writes a `question_open` line to the desk hostd's events socket at `config.runtimeDir/events.sock`, the way P2's own tests do; C1 adds it to `stack.ts`.)
+test("cards are grouped by project, then machine", async () => {
+  const shape = await st.page.eval(`[...document.querySelectorAll("[data-test=inbox-card]")].map(c => [!!c.closest("[data-test=inbox-group]"), c.closest("[data-test=inbox-machine]")?.dataset.machine === c.dataset.machine])`);
+  expect(shape.length).toBeGreaterThanOrEqual(4);
+  for (const s of shape) expect(s).toEqual([true, true]);
+  const done = await st.page.eval(`[...document.querySelectorAll("[data-test=section-done] [data-test=inbox-machine]")].map(m => m.dataset.machine).sort()`);
+  expect(done).toEqual(["testdesk", "testlaptop"]);
+});
+
+test("Stop on a working card sends Esc to that session on its own machine", async () => {
+  await st.page.click(`[data-test=inbox-card][data-column=working][data-machine=testlaptop] [data-action=stop]`);
+  await st.waitFor(async () => st.proxies.laptop.requests("/v1/sessions/").some((r) => r.method === "POST" && r.path.endsWith("/keys")));
+  const k = st.proxies.laptop.requests("/v1/sessions/").filter((r) => r.method === "POST" && r.path.endsWith("/keys")).at(-1);
+  expect(k.body).toEqual({ keys: ["Esc"] });
+  expect(k.path).toContain(encodeURIComponent(st.sessionId("laptop", "status-working.jsonl")));
+});
+
+test("swiping any card left archives it (a Working card here)", async () => {
+  const id = await st.page.eval(`document.querySelector("[data-test=inbox-card][data-column=working][data-machine=testlaptop]").dataset.item`);
+  const box = await st.page.eval(`(() => { const r = document.querySelector("[data-item='${id}']").getBoundingClientRect(); return { x: r.right - 20, y: r.top + r.height / 2 }; })()`);
+  await st.page.swipe({ x: box.x, y: box.y, dx: -200, dy: 0 });
+  await st.page.waitFor(`!document.querySelector("[data-item='${id}']")`, 10000);
+  expect(st.proxies.laptop.requests("/v1/inbox/").filter((r) => r.method === "POST").map((r) => r.path)).toContain(`/v1/inbox/${encodeURIComponent(id)}/archive`);
+});
+```
 
 ## Task D5: Changes (diff), previews, usage
 
@@ -1539,7 +1914,9 @@ test("previews and usage are readable", async () => {
 
 **Files:** `web/src/views/settings.js`, `web/src/views/config.js`, `web/styles/settings.css`, `web/test/e2e/settings.test.ts`.
 
-**Behaviour.** Settings (this device, `porthole:settings`): text size (5 steps, live preview), read replies aloud (on/off), tmux prefix for gestures (default `C-b`, validated by `parseSteps`), machines (list, add by name → `https://<name>.<tailnet>.ts.net` derived from this page's origin, remove; in the Android app the list is read-only with "Change machines in the app's settings"), shortcuts editor (`GET/PUT /v1/shortcuts` per machine: label + steps text with live `parseSteps` feedback and a preview of the chips; Save disabled while invalid), voice recordings kept (`GET /v1/voice/kept`, count only). Config (per machine, SPEC 4.14): `GET/PUT /v1/config` fields with plain labels; `restartNeeded` → "Saved. Restart Porthole on <machine> for this to take effect."; Doctor: `GET /v1/doctor` checks as a list with a word and a shape per result.
+**Behaviour.** Settings (this device, SPEC 4.2 item 5, one JSON object in `localStorage` `porthole:settings`): text size (`termFontPx` and the chat text size, 5 steps, live preview); talk mode (SPEC 4.12): `talkAutoSend` "Send automatically after I speak" (default on) and `talkAutoStop` "Stop recording after 2 seconds of silence" (default on); `readAloud` "Read replies aloud" (default off); gestures (SPEC 4.4): one row per gesture in `DEFAULT_GESTURES` with a select of `ACTIONS` (plain words, e.g. "Next window"), "Reset gestures" clears the field; the swipe-window rows carry the note "Also changes the window on the computer's screen"; only entries that differ from the defaults are saved as `gestures`, and the terminal reads `mergeGestureMap(settings.gestures)` (A9); `tmuxPrefix` for gestures and shortcuts (default `C-b`, GUESS, validated by `parseSteps`); machines (list, add by name → `https://<name>.<tailnet>.ts.net` derived from this page's origin, remove; in the Android app the list is read-only with "Change machines in the app's settings"); notifications (only in the Android app: a link to the app's notification settings through the bridge; the page itself shows none, G4); voice recordings kept (`GET /v1/voice/kept`, count only). Config (per machine, SPEC 4.2 item 6, `#/config/<machine>`): custom shortcuts editor (`GET/PUT /v1/shortcuts` on that machine: label + steps text with live `parseSteps` feedback and a preview of the chips; Save disabled while invalid); hostd settings `GET/PUT /v1/config` with plain labels; `restartNeeded` → "Saved. Restart Porthole on <machine> for this to take effect."; omp extension status and Doctor: `GET /v1/doctor` checks as a list with a word and a shape per result.
+
+Test hooks: `[data-test=settings]`, `[data-test=config]`; toggles `[data-test=talk-auto-send]`, `[data-test=talk-auto-stop]`, `[data-test=read-aloud]` (checkboxes); gesture selects `[data-test=gesture-select][data-gesture=<name>]`; `[data-test=gesture-reset]`; shortcut editor hooks as in the test below, inside `[data-test=config]`.
 
 ```ts
 // web/test/e2e/settings.test.ts
@@ -1551,8 +1928,24 @@ let st: Stack;
 beforeAll(async () => { st = await startStack({ fixtures: { desk: [], laptop: [] } }); await st.page.phone(); });
 afterAll(async () => { await st?.stop(); });
 
-test("a bad shortcut cannot be saved and says why; a good one round-trips through hostd", async () => {
+test("talk toggles and a remapped gesture are saved on this device", async () => {
   await st.page.goto("https://testdesk.example.ts.net/#/settings");
+  await st.page.waitFor(`!!document.querySelector("[data-test=talk-auto-send]")`, 10000);
+  await st.page.click("[data-test=talk-auto-send]");
+  await st.page.click("[data-test=talk-auto-stop]");
+  await st.page.eval(`(() => { const s = document.querySelector("[data-test=gesture-select][data-gesture=swipe1-left]"); s.value = "none"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+  const saved = JSON.parse(await st.page.eval(`localStorage.getItem("porthole:settings")`));
+  expect(saved.talkAutoSend).toBe(false);
+  expect(saved.talkAutoStop).toBe(false);
+  expect(saved.gestures).toEqual({ "swipe1-left": "none" });
+  await st.page.click("[data-test=gesture-reset]");
+  expect(JSON.parse(await st.page.eval(`localStorage.getItem("porthole:settings")`)).gestures ?? {}).toEqual({});
+  expect(await readable(st.page, "[data-test=settings]")).toEqual([]);
+  await st.page.shot("p3-settings-device");
+});
+
+test("a bad shortcut cannot be saved and says why; a good one round-trips through hostd", async () => {
+  await st.page.goto("https://testdesk.example.ts.net/#/config/testdesk");
   await st.page.click("[data-test=shortcut-add]");
   await st.page.click("[data-test=shortcut-label]"); await st.page.type("Stop it");
   await st.page.click("[data-test=shortcut-steps]"); await st.page.type("Ctrl-C");
@@ -1562,7 +1955,7 @@ test("a bad shortcut cannot be saved and says why; a good one round-trips throug
   await st.page.click("[data-test=shortcut-steps]"); await st.page.type("C-c, text:echo done\\, ok, Enter");
   await st.page.click("[data-test=shortcut-save]");
   await st.waitFor(async () => JSON.stringify(await st.api("desk", "/v1/shortcuts")).includes("Stop it"));
-  expect(await readable(st.page, "[data-test=settings]")).toEqual([]);
+  expect(await readable(st.page, "[data-test=config]")).toEqual([]);
 });
 
 test("config and doctor are readable", async () => {
@@ -1577,7 +1970,7 @@ test("config and doctor are readable", async () => {
 
 **Files:** `web/src/views/talk.js`, `web/styles/talk.css`, `web/test/e2e/talk.test.ts`.
 
-**Behaviour.** `talk.js` exports `mount` for the talk overlay opened from the chat's mic button, and `attachReadAloud(ctx, chatEvents)` that the chat view calls (D2 imports it with a dynamic `import("./talk.js")`, so D2 does not depend on D7 at load time). Read-aloud: when "Read replies aloud" is on (or talk mode is open), every **new** assistant item that `chatmodel.append` returns with `stopReason` done is turned into `summaryUtterances(text)` and spoken in order: bridge `speak({utterances})` when available, else `speechSynthesis.speak(new SpeechSynthesisUtterance(u))` one by one; a "Stop reading" button cancels. Talk mode (SPEC 4.12): big mic button; bridge `startRecording`/`stopRecording` or `getUserMedia` + `AudioContext` → `resample` → `createSilence` → `encodeWav` → `POST /v1/voice` → `{text}` placed in the composer draft (saved like typing), then sent automatically only in talk mode; errors use `copy.voiceFailed` and keep the recording's text if any.
+**Behaviour.** `talk.js` exports `mount` for the talk overlay opened from the chat's mic button, and `attachReadAloud(ctx, chatEvents)` that the chat view calls (D2 imports it with a dynamic `import("./talk.js")`, so D2 does not depend on D7 at load time). Read-aloud (SPEC 4.12): when "Read replies aloud" is on (or talk mode is open), the items that `chatmodel.append` returns as new go through `finishedReplies(newItems)` (A7: only the final assistant message of a finished turn, `stopReason` `"stop"`; a `"toolUse"` message in the middle of a turn is never spoken, and a reconnect's backlog never re-speaks old replies), and each one is turned into `summaryUtterances(text)` and spoken in order: bridge `speak({utterances})` when available, else `speechSynthesis.speak(new SpeechSynthesisUtterance(u))` one by one; a "Stop reading" button cancels. Talk mode (SPEC 4.12): big mic button; bridge `startRecording`/`stopRecording` or `getUserMedia` + `AudioContext` → `resample` → `createSilence` (used only when Settings `talkAutoStop` is on) → `encodeWav` → `POST /v1/voice` → `{text}` placed in the composer draft (saved like typing), then sent automatically only in talk mode and only when `talkAutoSend` is on; errors use `copy.voiceFailed` and keep the recording's text if any.
 
 ```ts
 // web/test/e2e/talk.test.ts
@@ -1605,13 +1998,15 @@ beforeAll(async () => {
 });
 afterAll(async () => { await st?.stop(); });
 
-test("P3-4: a new fixture reply is spoken as exactly its first paragraph plus its decision titles", async () => {
+test("P3-4: a new fixture turn speaks only its final reply: first paragraph plus decision titles, never the tool-use message", async () => {
   expect(await st.page.eval("window.__spoken")).toEqual([]);
   const line = readFileSync(path.join(import.meta.dir, "..", "fixtures", "reply-p3.jsonl"), "utf8");
   await st.append("desk", "chat-p3.jsonl", line);
   await st.page.waitFor(`window.__spoken.length >= 3`, 15000);
   await Bun.sleep(1000);
-  expect(await st.page.eval("window.__spoken")).toEqual(["The tests pass and the page loads on the phone.", "1. Merge the branch", "2. Turn on the advisor"]);
+  const spoken = await st.page.eval("window.__spoken");
+  expect(spoken).not.toContain("Let me run the tests before I answer.");
+  expect(spoken).toEqual(["The tests pass and the page loads on the phone.", "1. Merge the branch", "2. Turn on the advisor"]);
 });
 ```
 
@@ -1649,7 +2044,7 @@ bun test --timeout 120000 web/test/e2e/smoke.test.ts && bun test --timeout 12000
 bun run test
 ```
 
-(The server suite must still pass: P3 changes nothing in `server/`.) Then the read-only leftover check: `pgrep -a -f porthole-test-` prints nothing.
+(The server suite must still pass: P3 changes nothing in `server/`.) Then the leftover check, with no `pgrep -f` / `pkill` by pattern: every e2e file's `afterAll` calls `st.stop()`, which ends its own Chromium by its recorded PID (a stop that fails shows as a failing `afterAll` in that file's output, so the chain above must report no errors), and the smoke file is run once more after the chain, `bun test --timeout 120000 web/test/e2e/smoke.test.ts`, whose last test (C1 Step 5) proves that `stop()` leaves no process on that run's own `--user-data-dir` and that the recorded PID is gone.
 - [ ] **Step 4: README.** `web/README.md`: what the folder is, no build step, how to run unit and e2e tests (the commands above), the vendored versions and where `VENDOR.md` is, the "no innerHTML" rule, and that every string lives in `copy.js`.
 - [ ] **Step 5: Report** to the orchestrator with the screenshots in `web/test/.out/` (p3-1-drawer, p3-1-chat, p3-1-inbox, p3-1-diff, p3-2-send-failed, p3-3-reconnecting, p3-3-terminal-reattached), the P3 item → test name map, and the commit/push proof.
 - [ ] **Step 6: Commit and push.**
@@ -1671,18 +2066,18 @@ git add web/README.md web/test/e2e/acceptance.test.ts && git commit -m "web: P3 
 | G3 | **No tmux prefix in `SessionInfo`.** | Terminal gestures send the prefix as bytes; P3 guesses `C-b` (G-guess 4) with a Settings override. | Add `tmuxPrefix: string \| null` to `SessionInfo`, read once per socket with `tmux -L/-S <socket> show-options -gv prefix`. |
 | G4 | **Per-device notification queues never expire.** Each browser gets its own `web-<id>` device name, so P2 keeps a queue for every browser that ever connected. | The page acks every notify it receives, but a browser that is never opened again leaves its queue behind. | Drop queues for devices not seen for 7 days (or skip queueing for `web-` devices: the page does not show notifications). |
 | G5 | **Doc only:** the events contract should say pages must use a device name of their own (`web-<id>`), never the phone app's node name. | Using `bencell` from the page would steal (ack) the phone app's notifications. | One sentence in SPEC 5.2 next to `/v1/events?device=`. |
+| G6 | **Chat items carry no `stopReason`.** `ChatItem` (`server/src/transcript/parse.ts` lines 5-12) has no field that says whether an assistant message ended its turn or stopped for a tool call. | Read-aloud (SPEC 4.12) must speak only the reply that finishes a turn; without it, text written before a tool call ("Let me run the tests…") would be spoken too. **Blocks D7** (Task 0 Step 1 checks it). | Add `stopReason: string \| null` to `ChatItem`, copied from the assistant message's `stopReason` on its `kind:"assistant"` item (`null` for user and tools items); one parse test with a `toolUse` message and a `stop` message. |
 
 ## Needs your decision
 
-1. **Let the "serve the screens" change (G1) land first, as a small backend task.** Context: hostd can't hand out the page yet, so nothing in P3 can be opened or tested until it can. Options: (a) a short backend task right after P2 adds it (example: one new file `server/src/features/web.ts` with its tests); (b) let the P3 builder add it inside P3. Recommendation: (a), so the backend stays the priority and P3 touches only `web/`.
-2. **Questions with several choices or several parts.** Context: P2 can only press one button for one question. Options: (a) P3 shows "Answer this in the terminal" for those (planned); (b) extend the answer API (G2) before P3. Recommendation: (a) now, (b) later if it comes up often.
-3. **Terminal swipes switch the tmux window at the desk too.** Context: the phone and the desk share one tmux session, so swiping to the next window on the phone also moves the desk's view. Options: (a) keep it (simple, matches how tmux works); (b) leave swipes out of P3. Recommendation: (a), with a one-line note under the gesture in Settings.
-4. **Button size.** Context: the design aims for 48 px tall buttons; the automatic check fails anything under 44 px (the common accessibility minimum). Options: (a) 48 px target, 44 px hard floor (planned); (b) 48 px hard floor everywhere, which makes the toolbar wrap to two rows on a 412 px phone. Recommendation: (a).
-5. **tmux prefix key. GUESS:** `Ctrl+B` (the tmux default) on every socket; not checked against your tmux setup. Options: (a) keep the guess with a Settings override (planned); (b) add G3 so hostd reports it. Recommendation: (a) now; (b) if you use a different prefix.
+1. **Let the "serve the screens" change (G1) and the "reply finished" marker (G6) land first, as one small backend task.** Context: hostd can't hand out the page yet, so nothing in P3 can be opened or tested until it can (G1); and the chat items don't say which reply ends a turn, so read-aloud would also speak the "let me check…" lines (G6). Options: (a) a short backend task right after P2 adds both (example: one new file `server/src/features/web.ts` plus a `stopReason` field in `server/src/transcript/parse.ts`, each with its tests); (b) let the P3 builder add them inside P3. Recommendation: (a), so the backend stays the priority and P3 touches only `web/`.
+2. **Questions with several choices or several parts (a departure from the spec).** Context: SPEC 4.6 says every question gets its option buttons, but P2 can only press one button for one question, so P3 would show "Answer this in the terminal" for questions that allow several choices or ask several things at once. That is a deviation from the approved spec, so it needs your OK. Options: (a) accept the fallback for P3 (planned), example: a two-part question shows its text and an "Open terminal" button; (b) extend the answer API (G2) before P3, so every question gets buttons. Recommendation: (a) now, (b) later if it comes up often.
+3. **Button size.** Context: the design aims for 48 px tall buttons; the automatic check fails anything under 44 px (the common accessibility minimum). Options: (a) 48 px target, 44 px hard floor (planned); (b) 48 px hard floor everywhere, which makes the toolbar wrap to two rows on a 412 px phone. Recommendation: (a).
+4. **tmux prefix key. GUESS:** `Ctrl+B` (the tmux default) on every socket; not checked against your tmux setup. Options: (a) keep the guess with a Settings override (planned); (b) add G3 so hostd reports it. Recommendation: (a) now; (b) if you use a different prefix.
 
 ## Self-review
 
-- **Spec coverage.** SPEC 4.2 sidebar → D1; 4.3 chat, key row, live-voice note → D2; 4.4 terminal, toolbar, gestures, shortcuts → D3 (+ A3); 4.5 drafts, history, clientMsgId → A1, D2; 4.6 inbox and answers → D4 (+ G2); 4.8/4.10 previews → D5; 4.9 diff → D5; 4.11 usage → D5; 4.12 talk and read-aloud → A5, A6, D7; 4.13 reconnect → A2, B1, D1, D3; 4.14 config/doctor → D6; 4.15 every machine in the list → B1 (fleet), D1; 4.16 native bridge → B1; 5.1 no build, vendored, no CDN → Task 0, E1 grep; 5.2 contract → V5-V10; 5.4 `X-Porthole` and origin → B1 test, G1 headers; 7 safety → Global Constraints, C1; 8 P3 items 1-4 → acceptance map in E1.
+- **Spec coverage.** SPEC 4.2 items 1-4 sidebar → D1 (+ A7 `buildSidebar`); 4.2 item 5 Settings (machines, talk toggles, read-aloud, gestures, text size, notifications) → D6; 4.2 item 6 Config per machine (shortcuts, hostd settings, extension status, doctor) → D6; 4.3 chat, key row, attachments, live-voice note → D2; 4.4 terminal, toolbar, Ctrl latch, gestures, shortcuts → A9, D3 (+ A3), remap in D6; 4.5 drafts, sent history, clientMsgId → A1, D2; 4.6 inbox grouped by project then machine, Stop, archive, answers → A7, D4 (+ G2, Needs Ben 2); 4.8 attachments → D2; 4.10 previews → D5; 4.9 diff → D5; 4.11 usage → D5; 4.12 talk mode, auto-send and auto-stop toggles, read-aloud of finished replies only → A5, A6, A7 `finishedReplies`, D6, D7 (+ G6); 4.13 reconnect → A2, B1 `reportLink`, D1, D3; 4.14 watch → not P3; 4.15 every machine in the list → B1 (fleet), D1; 4.16 native bridge → B1; 5.1 no build, vendored, no CDN → Task 0, E1 grep; 5.2 contract → V5-V10; 5.4 `X-Porthole` and origin → B1 test, G1 headers; 7 safety → Global Constraints, C1 exact-PID leftover check; 8 P3 items 1-4 → acceptance map in E1.
 - **No placeholders.** Every task names its files, interfaces, test code and exact commands. Values not verified in this session are labelled GUESS (worktree path, G-guess 1-4, P2 exporting its feature list, `cancelled` outcome wording from P2).
 - **Ownership.** Each file has one owner in the table; views meet only through `route.js` names and lazy `import()`, and D2 reaches D7 by dynamic import, so group D can run in parallel.
 - **Type consistency.** `createDrafts`/`createOutbox`/`nextAction` (A1) feed B1's flush and D2's send flow; `delayFor`/`createReconnector` (A2) feed `openSocket` (B1); `parseSteps`/`stepBytes`/`stepLabel` (A3) feed D2, D3, D6; `toTree` (A4) feeds `mdom` (D2); `summaryUtterances` (A5) feeds D7; `groupInbox`/`answerMode` (A7) feed D4; `buildSidebar` (A7) feeds D1; `copy` keys used in tests (`reconnecting`, `sendHeld`, `sendFailedTitle`, `liveVoiceKeys`, `noRepo`, `answerInTerminal`) match the Voice table.
@@ -1695,4 +2090,4 @@ Plan complete. Two ways to run it:
 1. **Subagent-driven (recommended):** one fresh agent per task, review between tasks; groups A and D fan out in parallel, C runs beside A and B. Every brief carries: at most 2 failed attempts per step, no Ben browsers or real sessions, e2e files one at a time, exact-PID kills only.
 2. **Inline:** run the tasks in this session in group order with checkpoints after groups A, B+C and D.
 
-Precondition for either: P2 merged and G1 landed (Needs your decision 1).
+Precondition for either: P2 merged and G1 and G6 landed (Needs your decision 1).
