@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Porthole</string>
+    <string name="complication_usage">Claude usage</string>
+    <string name="complication_waiting">Waiting</string>
+    <string name="inbox">Inbox</string>
+    <string name="usage">Usage</string>
+    <string name="stop">Stop</string>
+    <string name="no_phone">Phone not connected</string>
+    <string name="nothing_waiting">Nothing needs you</string>
+</resources>

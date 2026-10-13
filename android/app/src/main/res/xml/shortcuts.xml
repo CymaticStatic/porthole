@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="machines"
+        android:enabled="true"
+        android:icon="@drawable/ic_notify"
+        android:shortcutShortLabel="@string/shortcut_machines"
+        android:shortcutLongLabel="@string/shortcut_machines">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="ai.porthole.app"
+            android:targetClass="ai.porthole.app.settings.MachinesActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="battery"
+        android:enabled="true"
+        android:icon="@drawable/ic_notify"
+        android:shortcutShortLabel="@string/shortcut_battery"
+        android:shortcutLongLabel="@string/shortcut_battery">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="ai.porthole.app"
+            android:targetClass="ai.porthole.app.settings.BatteryGuideActivity" />
+    </shortcut>
+</shortcuts>

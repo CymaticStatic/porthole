@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The plan named android:Theme.Material.DayNight.NoActionBar, which is not a framework style (AAPT: not found). -->
+    <style name="Theme.Porthole" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+    <style name="Theme.Porthole.Translucent" parent="android:Theme.Translucent.NoTitleBar" />
+</resources>

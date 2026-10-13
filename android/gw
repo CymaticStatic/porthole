@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runs the Gradle wrapper with the home-folder JDK 17 and Android SDK. Changes nothing global.
+export JAVA_HOME=/home/cymatic/.local/share/mise/installs/java/temurin-17.0.20+101
+export ANDROID_HOME=/home/cymatic/Android/Sdk
+cd "$(dirname "$0")" && exec ./gradlew "$@"

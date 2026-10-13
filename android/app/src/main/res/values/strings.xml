@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Porthole</string>
+    <string name="channel_connection">Connection</string>
+    <string name="channel_needs_you">Needs you</string>
+    <string name="fgs_connected">Porthole is connected</string>
+    <string name="fgs_connecting">Porthole is reconnecting</string>
+    <string name="action_open">Open</string>
+    <string name="shortcut_machines">Machines</string>
+    <string name="shortcut_battery">Battery</string>
+</resources>
