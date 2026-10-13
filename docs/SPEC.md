@@ -274,9 +274,9 @@ drawer on the phone. Its groups, top to bottom:
   `tailscale serve` on HTTPS port 8443. Opening a preview hits `/__porthole/preview?port=N`, which
   sets a cookie. From then on that device's requests (including WebSockets, for hot reload) are
   proxied to `127.0.0.1:N` unchanged, so pages that use absolute paths still work. One preview at a
-    time per device. The Tailscale identity and node check of 5.4 applies (preview pages cannot send
-  `X-Porthole`). Preview pages are a different
-  origin from the control room (port 8443 vs 443), and the API rejects them (5.4).
+  time per device. The Tailscale identity and node check of 5.4 applies (preview pages cannot send
+  `X-Porthole`). Preview pages are a different origin from the control room (port 8443 vs 443), and
+  the API rejects them (5.4).
 
 ### 4.11 Agent usage (Moshi: agent usage)
 - Shows how much of Ben's Claude usage limits is used: the 5-hour and 7-day windows, with the time
