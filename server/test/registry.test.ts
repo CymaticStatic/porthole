@@ -5,7 +5,7 @@ import type { HostdConfig } from "../src/config";
 import { sessionId } from "../src/sessions/ids";
 import { Registry, type SessionInfo, type Tree } from "../src/sessions/registry";
 import { statusFromTranscript } from "../src/sessions/status";
-import { Scratch, waitFor } from "./helpers/scratch";
+import { type HerdrAgentFixture, Scratch, waitFor } from "./helpers/scratch";
 
 let s: Scratch;
 let cfg: HostdConfig;
@@ -22,7 +22,7 @@ const bySession = (t: Tree, session: string): SessionInfo => {
 };
 const addSession = (sock: string, session: string, command: string, cwd = s.root) =>
   s.tmux(sock, "new-session", "-d", "-s", session, "-x", "120", "-y", "40", "-c", cwd, command);
-const herdrAgent = (status: string, extra: Record<string, string> = {}) =>
+const herdrAgent = (status: HerdrAgentFixture["agent_status"], extra: Record<string, string> = {}) =>
   s.setHerdrAgents([{ terminal_id: "t1", agent_status: status, workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", focused: false, revision: 1, ...extra }]);
 
 test("finds a scratch tmux omp session with its transcript and status", async () => {

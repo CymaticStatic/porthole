@@ -38,13 +38,16 @@ export interface TestWs {
   next(type: string, timeoutMs?: number): Promise<WsMessage>;
   /** All binary frames so far, decoded as UTF-8. */
   output(): string;
-  send(data: string | Uint8Array): void;
+  send(data: string | Uint8Array<ArrayBuffer>): void;
   closed: Promise<number>;
   close(): void;
 }
 
+// Bun's WebSocket takes upgrade headers, but @types/node's global WebSocket (which wins over bun-types') does not.
+const BunWebSocket = WebSocket as unknown as new (url: string, options: Bun.WebSocketOptions) => WebSocket;
+
 export async function openWs(h: TestHostd, p: string, origin: string = h.config.origin): Promise<TestWs> {
-  const ws = new WebSocket(h.url.replace(/^http/, "ws") + p, { headers: { Origin: origin, "X-Porthole-Local": h.localToken } });
+  const ws = new BunWebSocket(h.url.replace(/^http/, "ws") + p, { headers: { Origin: origin, "X-Porthole-Local": h.localToken } });
   ws.binaryType = "arraybuffer";
   const seen: WsMessage[] = [];
   const taken = new Set<WsMessage>();

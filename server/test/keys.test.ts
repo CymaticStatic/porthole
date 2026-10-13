@@ -5,7 +5,7 @@ import { SentLog } from "../src/deliver/sentlog";
 import { sessionId } from "../src/sessions/ids";
 import { Registry } from "../src/sessions/registry";
 import { ompPane, pane } from "./helpers/client";
-import { Scratch, waitFor } from "./helpers/scratch";
+import { type HerdrAgentFixture, Scratch, waitFor } from "./helpers/scratch";
 
 let s: Scratch;
 let d: Deliverer;
@@ -17,7 +17,7 @@ beforeEach(() => {
 afterEach(() => s.cleanup());
 
 const HERDR_ID = sessionId({ kind: "herdr", workspace: "w1", tab: "w1:t1", pane: "w1:p1" });
-function herdrAgent(status: string): void {
+function herdrAgent(status: HerdrAgentFixture["agent_status"]): void {
   s.setHerdrAgents([{ terminal_id: "t1", agent_status: status, workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", focused: false, revision: 1, name: "rev" }]);
 }
 

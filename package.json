@@ -5,6 +5,11 @@
   "type": "module",
   "scripts": {
     "test": "bun test server/test",
-    "hostd": "bun server/src/main.ts"
+    "hostd": "bun server/src/main.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.3",
+    "typescript": "^7.0.2"
   }
 }

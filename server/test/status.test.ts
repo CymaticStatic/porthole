@@ -14,7 +14,7 @@ test("finds the omp in a pane, its open transcript and its inbox", async () => {
   const t = s.transcript("status-needs-you.jsonl");
   const sock = s.newTmuxServer("chat", s.ompCommand(t));
   const panePid = s.panePid(sock, "=chat:0.0");
-  let omp: number | null = null;
+  let omp = null as number | null;
   await waitFor(() => { omp = findOmp(readProcTable(), panePid); return omp !== null && transcriptOf(omp, [s.transcripts]) === t; });
   expect(omp).toBe(panePid);
   expect(ompAlive(panePid)).toBe(true);

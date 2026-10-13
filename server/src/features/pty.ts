@@ -24,14 +24,8 @@ const LIVE_VOICE_ON = "live voice is on; typing here would mix with it";
 const LIVE_VOICE_UNKNOWN = "cannot tell if live voice is on, so typing is off";
 const HERDR_READONLY = "herdr terminals are read-only in P1";
 
-/** The part of Bun's subprocess-with-terminal this module uses. */
-interface PtyProc {
-  pid: number;
-  exitCode: number | null;
-  exited: Promise<number>;
-  kill(): void;
-  terminal: { write(bytes: Uint8Array): unknown; resize(cols: number, rows: number): void; close(): void };
-}
+/** The Bun subprocess our `tmux attach` client runs in (spawned with a `terminal`). */
+type PtyProc = Bun.Subprocess;
 
 interface PtyState {
   id: string;
@@ -40,6 +34,7 @@ interface PtyState {
   readonly: boolean;
   closed: boolean;
   watching: boolean;
+  chain: Promise<void>;
   screenTimer: NodeJS.Timeout | null;
   teardown: Promise<void> | null;
 }
@@ -92,15 +87,15 @@ export const ptyFeature: FeatureFactory = (d) => {
       terminal: {
         cols,
         rows,
-        data(_terminal: unknown, bytes: Uint8Array) {
+        data(_terminal, bytes) {
           if (ws.readyState === 1) ws.send(bytes);
         },
       },
       env: cleanEnv({ TERM: "xterm-256color" }),
-    } as never) as unknown as PtyProc;
+    });
     st.proc = proc;
     void proc.exited.then(() => {
-      try { proc.terminal.close(); } catch { /* already closed */ }
+      try { proc.terminal?.close(); } catch { /* already closed */ }
       if (!st.closed && ws.readyState === 1) ws.close(1000);
     });
   }
@@ -141,7 +136,7 @@ export const ptyFeature: FeatureFactory = (d) => {
       makeReadonly(ws, st, reasonFor(session.liveVoice));
       return;
     }
-    st.proc.terminal.write(bytes);
+    st.proc.terminal?.write(bytes);
   }
 
   function control(st: PtyState, text: string): void {
@@ -152,7 +147,7 @@ export const ptyFeature: FeatureFactory = (d) => {
     const m = msg as { type?: unknown; cols?: unknown; rows?: unknown };
     if (m.type !== "resize" || typeof m.cols !== "number" || typeof m.rows !== "number") return;
     if (!Number.isFinite(m.cols) || !Number.isFinite(m.rows)) return;
-    st.proc.terminal.resize(clamp(m.cols, COLS.min, COLS.max), clamp(m.rows, ROWS.min, ROWS.max));
+    st.proc.terminal?.resize(clamp(m.cols, COLS.min, COLS.max), clamp(m.rows, ROWS.min, ROWS.max));
   }
 
   // Detach only our own client (found by its pid), then make sure our own child is gone.
