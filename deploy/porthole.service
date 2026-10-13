@@ -1,0 +1,13 @@
+[Unit]
+Description=Porthole hostd (phone access to this machine's agent sessions)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun run %h/.local/share/porthole/hostd/current/server/src/main.ts
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target
