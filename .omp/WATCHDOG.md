@@ -21,8 +21,9 @@
   keys, so hostd must refuse keys for live-voice panes itself (SPEC 4.3), not rely on the screen.
 - Preview pages (port 8443) are same-site with the control room (port 443): cookies and SameSite do
   not separate them. Only the exact-Origin check and the X-Porthole header do (SPEC 5.4).
-- `tailscale serve` forwards to 127.0.0.1, so identity headers can be faked by local programs unless
-  hostd listens on a Unix socket (SPEC 5.4).
+- `tailscale serve` forwards locally, so identity headers can be faked by local programs. Trust them
+  only from a Unix-socket connection owned by root (`tailscaled`, checked with SO_PEERCRED); a 0600
+  socket alone is not enough (SPEC 5.4). WebSockets cannot carry X-Porthole: check exact Origin.
 - `git status` takes index.lock and repo config can run programs: always use GIT_OPTIONAL_LOCKS=0 and
   the flags in SPEC 4.9.
 - `voxtype transcribe` may load a second Whisper model onto the graphics card and crash voxtype's

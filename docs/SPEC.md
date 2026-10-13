@@ -3,8 +3,9 @@
 Status: **v2 draft for Ben's review, 2026-10-13.** Supersedes v1 (2026-10-12, last v1 commit `21b54fe`).
 v1's design was approved by Ben on 2026-10-12. v2 widens the scope to the useful features of the
 commercial app Moshi, as Ben asked on 2026-10-12 ("reverse engineer the app Moshi ... the backend is
-priority"). Ben chose every scope item in section 10 on 2026-10-12 and 2026-10-13, except one marked
-**ASSUMED** (the push route), which is built as written unless he changes it. Nothing gets built
+priority"). Ben chose every scope item in section 10 on 2026-10-12 and 2026-10-13, except three marked
+**ASSUMED** (section 9: push route, both machines in one view, local programs), which are built as
+written unless he changes them. Nothing gets built
 from v2 until he approves this written spec.
 
 **Clean room.** Moshi's features were studied only from its public docs (getmoshi.app/docs, read
@@ -89,8 +90,8 @@ program on each computer.
   closing never touches the session itself). The last one reopens on launch, and each one
   reconnects on its own (4.13).
 - hostd config (`~/.config/porthole/hostd.json`) sets: the tmux socket folder, the `tmux` and `herdr`
-  binaries (absolute paths, because a systemd user service has a thin PATH, Moshi's most common
-  support failure), and the folders it watches for omp transcripts. Tests point these at scratch
+  binaries plus `pactl` (absolute paths, because a systemd user service has a thin PATH, Moshi's most
+  common support failure), and the folders it watches for omp transcripts. Tests point these at scratch
   sockets and a fake `herdr`, so a test hostd never sees Ben's real sessions.
 - Updates are pushed over hostd's event WebSocket on change. Pull-to-refresh forces a re-scan.
 
@@ -127,8 +128,11 @@ drawer on the phone. Its groups, top to bottom:
   through the live inbox (4.5).
 - **hostd enforces this, not just the screen**: for an omp pane in live voice, hostd refuses every
   key press, shortcut, Stop, and option answer, whoever sends it (chat view, terminal toolbar, inbox,
-  notification button, watch). Answers that are plain text still go through the live inbox. The
-  terminal view of such a pane is read-only, with the same note.
+  notification button, watch). Typed answers to an open question are refused too ("Answer at the
+  desk"), because the live inbox would deliver them as a new message, not as the answer. Ordinary
+  new messages still go through the live inbox.
+- The terminal view of such a pane is read-only with the same note. If live voice turns on while a
+  terminal is attached, hostd drops input on that PTY WebSocket from then on.
 
 ### 4.4 Terminal view, gestures, shortcuts (Moshi: terminal, gestures, custom shortcuts)
 - A real terminal (xterm.js, vendored at a pinned version with its licence) connected over a
@@ -171,12 +175,14 @@ drawer on the phone. Its groups, top to bottom:
      the draft) if the pane is an omp in live voice mode.
   3. **herdr pane**: `herdr agent prompt` (plain text). Never send text into a pane that shows a
      question box; tell Ben to use the key row instead.
-- Every send has a `clientMsgId` made on the device. hostd remembers each id with its result
-  (persisted in `sent.jsonl`), so a retry after a dropped connection is answered from that record
-  and never delivered twice. Statuses: `delivered`, `pending`, `refused` (with the reason, e.g.
+- Every send has a `clientMsgId` made on the device. hostd records every status change for each id
+  in `sent.jsonl`, so a retry after a dropped connection (or a hostd restart) is answered from that
+  record and never delivered twice. A `pending` send becomes `failed` (draft kept) if its omp process
+  exits. Ids that ended `refused` or `failed` may be retried. Statuses: `delivered`, `pending`, `refused` (with the reason, e.g.
   live voice or a question box is showing), `failed` (with the reason).
 - On anything but `delivered` the draft stays, and the screen says what happened in plain words.
-- hostd appends every delivered message to `~/.local/state/porthole/sent.jsonl` (mode 0600).
+- `sent.jsonl` lives at `~/.local/state/porthole/sent.jsonl` (mode 0600) and holds the text of
+  delivered messages, so nothing is lost even if the phone is.
 
 ### 4.6 Inbox and inbox actions (Moshi: agent inbox, inbox actions)
 - One feed across all machines, in three columns: **Needs you / Working / Done**. Items are grouped
@@ -236,7 +242,8 @@ drawer on the phone. Its groups, top to bottom:
   is inserted into the composer, so the agent reads it from disk. Files never leave Ben's devices.
 - `<safe-name>`: the original name with anything other than letters, digits, `.`, `-` and `_`
   replaced by `_`, leading dots removed, cut to 100 characters, and prefixed with the time
-  (`HHMMSS-`). A clash adds `-2`, `-3`, … Paths are checked to stay inside the uploads folder.
+  (`HHMMSS-`). A name left empty (e.g. all dots) becomes `upload`. A clash adds `-2`, `-3`, … Paths
+  are checked to stay inside the uploads folder.
 - Limit: 50 MB per file. Uploads older than 30 days are deleted by hostd.
 
 ### 4.9 Diff viewer (Moshi: diff viewer)
@@ -246,7 +253,9 @@ drawer on the phone. Its groups, top to bottom:
   has `GIT_OPTIONAL_LOCKS=0` in its environment and
   `-c core.fsmonitor=false -c diff.external= --no-ext-diff --no-textconv` (the last two where the
   command takes them). Commands: `status --porcelain=v2`, `diff`, `diff --cached`, and the untracked
-  file list. A live agent's commit therefore never collides with Porthole. Staged, unstaged and untracked files are listed
+  file list. Repo filters (e.g. git-lfs) are switched off too: for each driver in
+  `git config --get-regexp '^filter\.'`, hostd adds `-c filter.<name>.process= -c filter.<name>.clean=`
+  and `-c filter.<name>.smudge=`. A live agent's commit therefore never collides with Porthole. Staged, unstaged and untracked files are listed
   separately. A tap shows the diff: unified on the phone, side-by-side on wide screens. Binary files
   are listed, not shown. The button shows a badge when uncommitted changes exist (`dirty` in the session data, 5.2).
 - Not a git repo: the button is greyed out with "No git repo here".
@@ -257,15 +266,16 @@ drawer on the phone. Its groups, top to bottom:
   shows its process name, PID and port.
 - **Only proxy what was found.** A port can be previewed only if it is inside the configured ranges
   **and** was found by the latest scan. These are always refused, whatever the config says:
-  8795-8798 (Thalamus mailbox, ntfy, Porthole), 9222-9225 (Chrome remote-debugging ports), 8443, and
-  any port below 1024.
+  8795-8796 (Thalamus mailbox, ntfy), hostd's own configured ports (8797, 8798 by default) and any
+  test hostd's port, 9222-9225 (Chrome remote-debugging ports), 8443, and any port below 1024.
 - Tapping one opens it in a separate in-app browser on the phone (one with **no** JS bridge, 4.16),
   or a new tab on the control room.
 - How: hostd runs a second loopback listener, the **preview proxy** (127.0.0.1:8798), published by
   `tailscale serve` on HTTPS port 8443. Opening a preview hits `/__porthole/preview?port=N`, which
   sets a cookie. From then on that device's requests (including WebSockets, for hot reload) are
   proxied to `127.0.0.1:N` unchanged, so pages that use absolute paths still work. One preview at a
-  time per device. The same identity check as section 5.4 applies. Preview pages are a different
+  time per device. The Tailscale identity and node check of 5.4 applies (preview pages cannot send
+`X-Porthole`). Preview pages are a different
   origin from the control room (port 8443 vs 443), and the API rejects them (5.4).
 
 ### 4.11 Agent usage (Moshi: agent usage)
@@ -282,7 +292,8 @@ drawer on the phone. Its groups, top to bottom:
   silence. The app records 16 kHz mono WAV (the phone app records natively; the control room uses
   `getUserMedia`/`MediaRecorder` and converts in the browser) and uploads it to hostd.
 - hostd transcribes with `voxtype transcribe <file.wav>` (local Whisper, no per-use cost; the v1
-  spec records voxtype 1.1.0 and this command as checked on 2026-10-12, not re-checked for v2), then
+  spec records voxtype 1.1.0 and this command as checked on 2026-10-12: **GUESS** for v2, not
+  re-checked; confirm with `voxtype --version` and `voxtype transcribe --help` at P2 start), then
   optionally cleans the text with `voxflow enhance` (check its stdin/stdout contract in
   `~/.config/voxflow/config.toml`). The audio is deleted after a successful transcription. If it
   fails, the audio is kept (0600, `~/.local/state/porthole/audio/`) for 30 days so the words can be
@@ -331,7 +342,7 @@ drawer on the phone. Its groups, top to bottom:
 - hostd serves the control room at `/` on each computer. It is the same screens the phone app shows
   (approach A, decision 10.1), laid out for a wide window with the sidebar always visible. It opens
   in any browser on the desktop or the laptop.
-- **Both machines in one view**: the page (or the phone app) talks to every machine in its list
+- **Both machines in one view** (**ASSUMED**, decision 9.3): the page (or the phone app) talks to every machine in its list
   directly: one event WebSocket per machine, and requests to each machine's `/v1` API. hostds never
   talk to each other. The inbox, the badges and the sidebar merge what each machine reports. Each
   hostd accepts calls from its own control-room origin and from the origins of the machines in its
@@ -373,8 +384,9 @@ drawer on the phone. Its groups, top to bottom:
   like `thalamus-mailbox.service`). User linger is off; that is acceptable.
 
 ### 5.2 API contract (all JSON; one version prefix `/v1`)
-Every `/v1` request carries the `X-Porthole: 1` header; every non-GET request is
-`Content-Type: application/json` (uploads: `multipart/form-data` plus the same header). See 5.4.
+Every `/v1` HTTP request carries the `X-Porthole: 1` header (WebSockets cannot, and rely on the
+exact `Origin`, 5.4). Request bodies are `application/json`, except uploads (`multipart/form-data`),
+voice (`audio/wav`), and `DELETE` (no body).
 - `GET /v1/machine`: this machine's name, hostd version, feature health.
 - `GET /v1/sessions`: the session tree (4.1), including per session `status`, `liveVoice`, `cwd`
   and `dirty` (uncommitted git changes, 4.9). `WS /v1/events`: session, status and inbox changes,
@@ -386,8 +398,8 @@ Every `/v1` request carries the `X-Porthole: 1` header; every non-GET request is
   `{status: delivered|pending|refused|failed, reason}`; `GET /v1/sends/:clientMsgId` → same shape.
 - `POST /v1/sessions/:id/keys` `{keys: [...]}` (key row and shortcuts); refused for live-voice
   panes (4.3).
-- `GET /v1/inbox`; `POST /v1/inbox/:itemId/answer` `{optionIndexes: [..] | text}`;
-  `POST /v1/inbox/:itemId/archive`.
+- `GET /v1/inbox`; `GET /v1/inbox/archive` (last 7 days);
+  `POST /v1/inbox/:itemId/answer` `{optionIndexes: [..] | text}`; `POST /v1/inbox/:itemId/archive`.
 - `POST /v1/push/register` `{endpoint, device}` (endpoint must be on the configured ntfy, 4.7);
   `DELETE /v1/push/register/:device`.
 - `POST /v1/uploads` (multipart) → `{path}`. `POST /v1/voice` (WAV) → `{text}`;
@@ -412,22 +424,26 @@ Every `/v1` request carries the `X-Porthole: 1` header; every non-GET request is
   `benacer-omarchy`, `bendesk-omarchy`. Verify at build time which headers `tailscale serve` really
   sets. Anything else gets 403. No passwords.
 - **Web pages cannot borrow that identity.** `tailscale serve` adds Ben's headers to every request
-  from his devices, including ones a random web page in his browser makes. So hostd also requires,
-  on every `/v1` request and every WebSocket upgrade:
-  - the `X-Porthole: 1` header (browsers must ask permission first for a custom header, and hostd
-    never grants it to other sites), and
-  - for every non-GET request and WebSocket upgrade, an `Origin` that exactly matches this machine's
-    control-room origin `https://<machine>.ts.net` (port 443) or one of its `peers` (4.15).
-    Preview pages (port 8443) and every other site fail this check.
+  from his devices, including ones a random web page in his browser makes. So hostd also requires:
+  - on every `/v1` HTTP request, the `X-Porthole: 1` header (browsers must ask permission first for
+    a custom header, and hostd never grants it to other sites);
+  - on every non-GET HTTP request **and every WebSocket upgrade**, an `Origin` that exactly matches
+    this machine's control-room origin `https://<machine>.ts.net` (port 443) or one of its `peers`
+    (4.15). Browsers cannot put custom headers on WebSockets, so the exact `Origin` is the check
+    there. Preview pages (port 8443) and every other site fail it.
   - CORS headers are sent only to those same exact origins.
-- **Local programs.** `tailscale serve` forwards to 127.0.0.1, so hostd cannot tell a forwarded
-  request from a local program that fakes the headers. At P1 start the builder checks whether
-  `tailscale serve` can forward to a Unix socket (an owner-only file instead of a network port). If
-  it can, hostd listens only on Unix sockets in `$XDG_RUNTIME_DIR/porthole/` (folder 0700), and the
-  identity headers can be trusted. If it cannot, hostd keeps 127.0.0.1, and the limit is written
-  down: on this single-user computer, any program running as Ben could already type into his
-  sessions directly. Local tools and tests use a token file instead
-  (`$XDG_RUNTIME_DIR/porthole/local-token`, 0600), sent as `X-Porthole-Local`.
+- **Local programs (ASSUMED, decision 9.4).** `tailscale serve` forwards to hostd on this computer,
+  so hostd must tell a forwarded request from a local program that fakes the headers:
+  - At P1 start the builder checks whether `tailscale serve` can forward to a Unix socket, and
+    whether Bun can read the connecting process's user (`SO_PEERCRED`). If both work, hostd listens
+    on Unix sockets in `$XDG_RUNTIME_DIR/porthole/` (folder 0700) and trusts identity headers only
+    from a connection owned by root (uid 0, `tailscaled`). Every other local connection must carry
+    the local token.
+  - If either does not work, hostd listens on 127.0.0.1 and the limit is written down in the README:
+    any program already running as Ben could fake the headers, which is no worse than what such a
+    program can already do (type into his sessions with `tmux send-keys`).
+  - Local tools and tests use a token file (`$XDG_RUNTIME_DIR/porthole/local-token`, 0600), sent as
+    `X-Porthole-Local`; a request with that token skips the identity check.
 - The omp extension's events socket is owner-only (0600 in a 0700 folder).
 - Each request's device and action is logged to `~/.local/state/porthole/access.log` (0600). Message
   text is never logged there.
@@ -460,9 +476,10 @@ in `omp-voice` (stays parked on `feat/live-inbox`); a Play Store listing; iPhone
 - One real omp test run is allowed per omp extension: a throwaway
   `omp --no-extensions -e <extension.ts> --no-session --model haiku` session in a temp folder (this is
   how live-inbox was proven, about 9 cents). P2.1 and P2.9 share one run.
-- Every test hostd runs with config overrides (5.1/4.1): a scratch tmux socket folder, a fake
-  `herdr`, fixture transcript folders, and a test port. A test hostd must never list Ben's real
-  sessions.
+- Every test hostd runs with config overrides (4.1): a scratch tmux socket folder, a fake `herdr`,
+  a fake `pactl`, fixture transcript folders, and a test port. A test hostd must never list Ben's
+  real sessions. The one exception is P1.5: it runs against the installed hostd behind
+  `tailscale serve`, and calls only `/v1/machine` and the auth checks.
 - Never restart `tailscaled` and never remove or change existing `tailscale serve` entries. Porthole
   only adds its own two entries, after reading `tailscale serve status`.
 - `porthole-events.ts` and `live-inbox.ts` load into **every** new omp session once installed to
@@ -494,17 +511,21 @@ log, systemd unit, tailscale serve, `live-inbox.ts` moved in and installed.
    failure returns `failed` with a plain reason.
 4. The PTY attaches to a scratch session and accepts input. Closing it detaches only its own client
    (`tmux list-clients` before/after).
-5. Requests without Ben's Tailscale identity get 403; requests through `tailscale serve` from an
-   allowed device get 200. A request with the wrong `Origin`, without `X-Porthole`, or a WebSocket
-   upgrade from a preview origin (port 8443) gets 403. A local request with forged identity headers
-   gets 403 (Unix-socket mode) or is refused without the local token (127.0.0.1 mode).
+5. Run against the installed hostd (port 8797), calling only `/v1/machine` and the auth checks (it
+   never lists or touches sessions in this test). Requests through `tailscale serve` from an allowed
+   device get 200. A wrong-login or wrong-node identity gets 403. A non-GET with the wrong `Origin`,
+   an HTTP request without `X-Porthole`, and a WebSocket upgrade with a preview origin (port 8443) or
+   a foreign origin each get 403. In Unix-socket mode only: a local connection not owned by root
+   that sends identity headers without the local token gets 403. The local token works in both
+   modes.
 6. `systemctl --user is-enabled porthole.service` says `enabled` (`WantedBy=default.target`), and
    the service comes back after `systemctl --user restart porthole.service`. `tailscale serve status`
    shows Porthole's two entries in its persisted config (no `tailscaled` restart).
 
 **P2. hostd features**: events extension, inbox, push, uploads, diff, preview proxy, usage, voice,
 shortcuts, doctor.
-1. With `porthole-events.ts` loaded in a throwaway omp (one run, shared with item 9), an `ask`
+1. With `porthole-events.ts` loaded in a throwaway omp running inside a `tmux -L porthole-test` pane
+   (one run, shared with item 9), an `ask`
    question appears in `/v1/inbox` with its options and closes when answered. Answering option 2 on a
    scratch pane that shows the same open question presses the right keys. A closed question is
    refused as read-only.
@@ -525,8 +546,9 @@ shortcuts, doctor.
    transcription keeps the audio file.
 9. omp is never slowed: in the same run as item 1, after hostd is stopped, the throwaway omp still
    answers normally.
-10. With a fake PipeWire live-voice input on a scratch omp pane, `keys`, Stop and option answers are
-    refused with a plain reason, and text still goes through the live inbox.
+10. With a fake `pactl` reporting live voice on a scratch omp pane: `keys`, Stop, option answers and
+    typed answers are refused with a plain reason; input on an already-open PTY WebSocket is
+    dropped; a new message still goes through the live inbox.
 11. Before transcribing, the VRAM check in 4.12 is done and its result reported.
 
 **P3. Shared screens / control room** (design with `skill://impeccable`): sidebar, chat, terminal with
@@ -548,6 +570,8 @@ usage, talk mode, settings, config, reconnect strip.
    made for the test (not Thalamus): open the desktop, send one typed and one spoken message, hear
    the summary, share a photo into the session, answer one notification button, and switch the phone
    from Wi-Fi to mobile data mid-session. Reading Thalamus's chat view (read-only) is also checked.
+   The scratch session is one extra throwaway omp run (haiku, about 10 cents) so a reply exists to
+   read aloud.
 
 **P5. Galaxy Watch6 app.**
 1. `./gradlew :wear:assembleDebug` builds. Complication previews render (`getPreviewData`).
@@ -555,7 +579,8 @@ usage, talk mode, settings, config, reconnect strip.
    shows usage % and "N waiting", an answer from the watch reaches a scratch session, and a phone
    notification's buttons appear on the watch.
 
-**P6. Laptop.** With Ben's OK at the time: hostd and its units are installed on `benacer-omarchy`.
+**P6. Laptop.** With Ben's OK at the time: hostd and its units are installed on `benacer-omarchy`,
+and each hostd's config `peers` lists the other machine's origin.
 The phone app and both control rooms switch between the two machines, and the inbox shows items from
 both.
 
@@ -564,6 +589,12 @@ both.
 1. Android package and app name: `ai.porthole.app` / "Porthole" are working names.
 2. Push route: ntfy + UnifiedPush is ASSUMED (4.7, decision 10.3); KDE Connect cannot carry
    buttons.
+3. **Both machines in one view (ASSUMED).** The page and the phone app call each machine directly and
+   merge the results (4.15). Alternative: one hostd fetches from the other and serves both, which
+   means machine-to-machine trust and a single point of failure.
+4. **Local programs (ASSUMED).** If hostd cannot prove a request came through `tailscale serve`
+   (5.4), the limit is written down instead: any program already running as Ben could fake his
+   identity to hostd, which is no worse than what it can already do.
 
 ## 10. Decision log
 
@@ -572,9 +603,11 @@ both.
    only (the watch cannot reach it).
 2. **Helper models**: Anthropic only (Ben, 2026-10-12). Rejected: GPT only, both.
 3. **Push route: ntfy + UnifiedPush (ASSUMED, awaiting Ben).** Ben asked about KDE Connect on
-   2026-10-13. Checked that day: KDE Connect 26.08.1 runs on the desktop, and the Pixel is paired and
-   reachable over Tailscale. But its desktop-to-phone message (`kdeconnect.ping`) is plain text with
-   no buttons, and another app (Porthole) cannot receive KDE Connect messages. So it cannot carry
+   2026-10-13. Checked that day (`kdeconnect-cli --list-devices`): KDE Connect 26.08.1 runs on the
+   desktop, and the Pixel is paired and reachable at its Tailscale address (100.120.182.107; the tool
+   labels the link "LAN"). But its desktop-to-phone message (`kdeconnect.ping`) is plain text with
+   no buttons, and [INFERENCE] another app (Porthole) cannot receive KDE Connect messages without its
+   own copy of the KDE Connect protocol. So it cannot carry
    Approve/Open buttons or wake the Porthole app (protocol doc:
    github.com/KDE/kdeconnect-meta, `protocol-schemas/protocol.md`). Also rejected: Google push
    (needs a Google project, goes through Google); the Porthole app holding its own always-open
@@ -591,7 +624,7 @@ both.
    Dropped: themes, fonts, biometrics, iCloud sync, everything Apple.
 9. **Sidebar groups** (Ben, 2026-10-13): machines, inbox, chats, terminals, settings, config.
 10. **Talk mode: Porthole's own voice loop, and summary read-aloud, confirmed** (Ben, 2026-10-12: "2. both"; again
-    2026-10-13: "8 both"). Rejected: approach B, piping the phone into omp's OpenAI live voice.
+    2026-10-13: "8 both"). Rejected: piping the phone into omp's OpenAI live voice.
 11. **Toolchain** install in the home folder: yes (Ben, 2026-10-13). **Device installs**: ask at the
     time (Ben, 2026-10-13). **GitHub**: private `CymaticStatic/porthole` (Ben, 2026-10-12; again
     2026-10-13).
