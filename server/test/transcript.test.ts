@@ -27,6 +27,19 @@ test("user, assistant, tool calls and live-delegation become chat items; the res
   expect(parseLine("{not json", 0)).toEqual([]);
 });
 
+test("assistant text items carry omp's stopReason: toolUse before tool calls, stop for the reply that ends the turn", () => {
+  const page = readPage(path.join(FIXTURES, "chat-basic.jsonl"), null, 50);
+  expect(page.items.map((i) => [i.kind, i.stopReason])).toEqual([
+    ["user", null],
+    ["assistant", "toolUse"],
+    ["tools", null],
+    ["assistant", "stop"],
+    ["user", null],
+  ]);
+  const noReason = JSON.stringify({ type: "message", id: "a9", parentId: null, timestamp: "2026-10-13T09:00:00.000Z", message: { role: "assistant", content: [{ type: "text", text: "no reason" }] } });
+  expect(parseLine(noReason, 0).map((i) => i.stopReason)).toEqual([null]);
+});
+
 test("pages walk backwards by cursor; after returns only newer lines", () => {
   const file = path.join(FIXTURES, "chat-basic.jsonl");
   const last = readPage(file, null, 1);

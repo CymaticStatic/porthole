@@ -10,6 +10,7 @@ export interface ChatItem {
   text: string;
   tools: string[];
   via: "typed" | "live-voice" | null;
+  stopReason: string | null;      // assistant text items: omp's message stopReason ("stop" ends a turn, "toolUse" is followed by tool calls); null otherwise
 }
 
 function textOf(content: unknown): string {
@@ -24,19 +25,20 @@ export function parseLine(line: string, cursor: number): ChatItem[] {
   const at = asString(e.timestamp);
   if (e.type === "custom_message" && e.customType === "live-delegation") {
     const text = textOf(e.content).trim();
-    return text ? [{ cursor, id, at, kind: "user", text, tools: [], via: "live-voice" }] : [];
+    return text ? [{ cursor, id, at, kind: "user", text, tools: [], via: "live-voice", stopReason: null }] : [];
   }
   if (e.type !== "message") return [];
   const msg = asRecord(e.message);
   if (msg.role === "user") {
     const text = textOf(msg.content).trim();
-    return text ? [{ cursor, id, at, kind: "user", text, tools: [], via: "typed" }] : [];
+    return text ? [{ cursor, id, at, kind: "user", text, tools: [], via: "typed", stopReason: null }] : [];
   }
   if (msg.role !== "assistant") return [];
   const items: ChatItem[] = [];
   const text = textOf(msg.content).trim();
-  if (text) items.push({ cursor, id: id + ":text", at, kind: "assistant", text, tools: [], via: null });
+  const stopReason = typeof msg.stopReason === "string" ? msg.stopReason : null;
+  if (text) items.push({ cursor, id: id + ":text", at, kind: "assistant", text, tools: [], via: null, stopReason });
   const tools = asArray(msg.content).map(asRecord).filter((b) => b.type === "toolCall").map((b) => asString(b.name));
-  if (tools.length) items.push({ cursor, id: id + ":tools", at, kind: "tools", text: "", tools, via: null });
+  if (tools.length) items.push({ cursor, id: id + ":tools", at, kind: "tools", text: "", tools, via: null, stopReason: null });
   return items;
 }
