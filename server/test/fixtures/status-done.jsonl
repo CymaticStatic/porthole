@@ -1,0 +1,3 @@
+{"type":"title","v":1,"title":"Fixture done","source":"auto","updatedAt":"2026-10-13T12:00:00.000Z","pad":"        "}
+{"type":"session","version":3,"id":"fx-done","timestamp":"2026-10-13T12:00:00.000Z","cwd":"/tmp/fixture"}
+{"type":"custom","customType":"cymatic.session-status","data":{"schema":"cymatic.session-status/v2","status":"fulfilled","questionCount":0,"questions":[],"recordedAt":"2026-10-13T12:00:01.000Z","source":{"entryId":"m0","trigger":"reply"}},"id":"s1","parentId":null,"timestamp":"2026-10-13T12:00:01.000Z"}

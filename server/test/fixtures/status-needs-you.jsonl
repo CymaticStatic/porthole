@@ -1,0 +1,6 @@
+{"type":"title","v":1,"title":"Fixture needs you","source":"auto","updatedAt":"2026-10-13T10:00:00.000Z","pad":"        "}
+{"type":"session","version":3,"id":"fx-needs-you","timestamp":"2026-10-13T10:00:00.000Z","cwd":"/tmp/fixture"}
+{"type":"message","id":"m1","parentId":null,"timestamp":"2026-10-13T10:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Pick a colour"}]}}
+{"type":"custom","customType":"cymatic.session-status","data":{"schema":"cymatic.session-status/v2","status":"in-progress","questionCount":0,"questions":[],"recordedAt":"2026-10-13T10:00:01.500Z","source":{"entryId":"m1","trigger":"turn-start"}},"id":"s1","parentId":"m1","timestamp":"2026-10-13T10:00:01.500Z"}
+{"type":"message","id":"m2","parentId":"s1","timestamp":"2026-10-13T10:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Red or blue?"}],"stopReason":"stop"}}
+{"type":"custom","customType":"cymatic.session-status","data":{"schema":"cymatic.session-status/v2","status":"awaiting-decision","questionCount":1,"questions":[{"number":1,"title":"Colour","text":"Red or blue?","priority":{"local":1,"global":1}}],"recordedAt":"2026-10-13T10:00:03.000Z","source":{"entryId":"m2","trigger":"reply"}},"id":"s2","parentId":"m2","timestamp":"2026-10-13T10:00:03.000Z"}
