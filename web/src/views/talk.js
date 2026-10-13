@@ -4,8 +4,11 @@
 // Settings are read through ctx.settings.get() every time they are needed, never cached or stored here.
 import { h } from "../dom/h.js";
 import { finishedReplies } from "../lib/chatmodel.js";
+import { ago } from "../lib/format.js";
 import { createSilence } from "../lib/silence.js";
 import { readAllUtterances, summaryUtterances } from "../lib/speech.js";
+import { defaultStorage } from "../lib/storage.js";
+import { createTalkHistory } from "../lib/talkhistory.js";
 import { encodeWav, resample } from "../lib/wav.js";
 
 /** @typedef {import("../net/api.js").Api} Api */
@@ -343,6 +346,8 @@ async function startNativeRecorder(bridge, { autoStop, onAutoStop }) {
  * @property {Api} api this chat's machine; the recording goes to `api.wav`
  * @property {(text: string, o: {send: boolean}) => void} onText add `text` to the composer draft (saved like typing); press Send when `send` is true
  * @property {() => void} [onClose]
+ * @property {string} [origin] this chat's machine address, kept with each transcription in the history
+ * @property {string} [sessionId] this chat's session, kept with each transcription in the history
  */
 
 /**
@@ -366,6 +371,9 @@ export function mount(root, ctx, opts) {
   let error = null;
   let heard = "";
 
+  const history = createTalkHistory(defaultStorage());
+  /** @type {ReturnType<typeof setTimeout>[]} */
+  const copiedTimers = [];
   const titleId = "talk-title";
   const glyph = h("span", { class: "talk-glyph-mic", "aria-hidden": "true" });
   const micLabel = h("span", { class: "talk-mic-label" });
@@ -378,10 +386,42 @@ export function mount(root, ctx, opts) {
   const errorBox = h("div", { class: "talk-error", "data-test": "talk-error", role: "alert", hidden: true }, errorHeadline, errorReason, retry);
   const heardBox = h("p", { class: "talk-heard", "data-test": "talk-heard", hidden: true });
   const closeBtn = h("button", { type: "button", class: "talk-close", "data-test": "talk-close", on: { click: () => dispose(true) } }, copy.close);
+  const recentList = h("ul", { class: "talk-recent-list", "data-test": "talk-recent-list" });
+  const recent = h("section", { class: "talk-recent", "aria-labelledby": "talk-recent-title" }, h("h3", { id: "talk-recent-title", class: "talk-recent-title" }, copy.talkRecent), recentList);
   const sheet = h("div", { class: "talk-sheet" },
     h("header", { class: "talk-head" }, h("h2", { id: titleId, class: "talk-title" }, copy.talkTitle), closeBtn),
-    status, ring, heardBox, errorBox);
+    status, ring, heardBox, errorBox, recent);
   const overlay = h("div", { class: "talk-overlay", "data-test": "talk", role: "dialog", "aria-modal": "true", "aria-labelledby": titleId }, sheet);
+
+  /** The first part of a machine's address, as the name the person knows it by. @param {string} origin */
+  function machineName(origin) {
+    try { return new URL(origin).hostname.split(".")[0]; } catch { return ""; }
+  }
+
+  function renderRecent() {
+    const now = Date.now();
+    const items = history.list();
+    recentList.replaceChildren(
+      ...(items.length === 0
+        ? [h("li", { class: "talk-recent-empty", "data-test": "talk-recent-empty" }, copy.talkRecentEmpty)]
+        : items.map((item) => {
+            const copyBtn = h("button", { type: "button", class: "talk-recent-button", "data-test": "talk-recent-copy" }, copy.copyText);
+            copyBtn.addEventListener("click", () => {
+              void navigator.clipboard.writeText(item.text).then(() => {
+                copyBtn.textContent = copy.copied;
+                copiedTimers.push(setTimeout(() => { copyBtn.textContent = copy.copyText; }, 1500));
+              }, () => {});
+            });
+            const where = machineName(item.origin);
+            return h("li", { class: "talk-recent-item", "data-test": "talk-recent-item" },
+              h("p", { class: "talk-recent-meta" }, ago(new Date(item.at).toISOString(), now), where === "" ? "" : ` · ${where}`),
+              h("p", { class: "talk-recent-text" }, item.text),
+              h("div", { class: "talk-recent-actions" },
+                copyBtn,
+                h("button", { type: "button", class: "talk-recent-button", "data-test": "talk-recent-putback", on: { click: () => { try { opts.onText(item.text, { send: false }); } catch { /* the chat view is gone */ } dispose(true); } } }, copy.putBack)));
+          })),
+    );
+  }
 
   /** @param {number} level 0 to 1 */
   const setLevel = (level) => { ring.style.setProperty("--level", level.toFixed(2)); };
@@ -461,6 +501,8 @@ export function mount(root, ctx, opts) {
     pendingWav = null;
     state = "idle";
     heard = text;
+    history.add({ text, origin: opts.origin, sessionId: opts.sessionId });
+    renderRecent();
     // After the overlay is closed the words still go to the draft, but are never sent on their own.
     const send = !closed && flag(ctx, "talkAutoSend", true);
     try { opts.onText(text, { send }); } catch { /* the chat view is gone; the words are still on screen here */ }
@@ -477,6 +519,7 @@ export function mount(root, ctx, opts) {
     if (closed) return;
     closed = true;
     talkOpen--;
+    for (const t of copiedTimers) clearTimeout(t);
     if (recorder) {
       recorder.cancel();
       recorder = null;
@@ -495,7 +538,7 @@ export function mount(root, ctx, opts) {
       return;
     }
     if (e.key !== "Tab") return;
-    const stops = [mic, retry, closeBtn].filter((el) => !el.hidden && !(el instanceof HTMLButtonElement && el.disabled) && el.offsetParent !== null);
+    const stops = [mic, retry, ...recentList.querySelectorAll("button"), closeBtn].filter((el) => !el.hidden && !(el instanceof HTMLButtonElement && el.disabled) && el.offsetParent !== null);
     if (stops.length === 0) return;
     const at = stops.indexOf(/** @type {any} */ (document.activeElement));
     const nextAt = e.shiftKey ? (at <= 0 ? stops.length - 1 : at - 1) : (at < 0 || at === stops.length - 1 ? 0 : at + 1);
@@ -505,6 +548,7 @@ export function mount(root, ctx, opts) {
 
   overlay.addEventListener("click", (e) => { if (e.target === overlay) dispose(true); });
   overlay.addEventListener("keydown", onKey);
+  renderRecent();
   render();
   setLevel(0);
   root.append(overlay);

@@ -66,6 +66,7 @@ export const copy = deepFreeze({
   contextLeftWarn: (/** @type {number | string} */ n) => `${n} % context left`,
   machineDownAgo: (/** @type {string | number} */ ago) => `Can't reach it · ${ago}`,
   configFor: (/** @type {string | number} */ machine) => `Config · ${machine}`,
+  previewsFor: (/** @type {string | number} */ machine) => `Previews · ${machine}`,
   configTitle: (/** @type {string | number} */ machine) => `Config for ${machine}`,
   closeSession: (/** @type {string | number} */ name) => `Close ${name}`,
   removeMachine: (/** @type {string | number} */ name) => `Remove ${name}`,
@@ -255,6 +256,8 @@ export const copy = deepFreeze({
   voiceFailed: "Couldn't turn your recording into text. Try again, or type your message instead.",
   stopReading: "Stop reading",
   readAll: "Read all",
+  talkRecent: "Recent",
+  talkRecentEmpty: "Nothing yet. What you say shows up here, the last 50 times.",
 
   // ---- Settings (this device) ----
   settingsTitle: "Settings",

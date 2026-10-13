@@ -468,6 +468,8 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     if (talk) return;
     talk = mountTalk(talkRoot, ctx, {
       api: machine.api,
+      origin,
+      sessionId,
       onText: (text, { send: pressSend }) => {
         insertSpoken(text);
         if (pressSend) void send();
