@@ -1,0 +1,46 @@
+// GET /v1/sessions (the tree) and the /v1/events socket: a snapshot on open, then every change.
+
+import { json, type FeatureFactory } from "../router";
+
+export const sessionsFeature: FeatureFactory = (d) => {
+  let unsubscribe: (() => void) | null = null;
+  return {
+    routes: [
+      {
+        method: "GET",
+        pattern: "/v1/sessions",
+        async handler() {
+          return json(await d.registry.current());
+        },
+      },
+    ],
+    channels: [
+      {
+        pattern: "/v1/events",
+        open(ws) {
+          d.hub.add(ws);
+          d.registry.startWatching();
+          void d.registry.current().then((tree) => {
+            if (ws.readyState === 1) ws.send(JSON.stringify({ type: "sessions", tree }));
+          });
+        },
+        message() {
+          // The events socket is server-to-client only in P1.
+        },
+        close(ws) {
+          d.hub.remove(ws);
+          d.registry.stopWatching();
+        },
+      },
+    ],
+    async start() {
+      unsubscribe = d.registry.onChange((tree) => {
+        d.hub.broadcast({ type: "sessions", tree });
+      });
+    },
+    stop() {
+      unsubscribe?.();
+      unsubscribe = null;
+    },
+  };
+};
