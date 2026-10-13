@@ -254,6 +254,7 @@ export const copy = deepFreeze({
   talkMicDenied: "Porthole can't use the microphone. Allow microphone access for this page, then try again.",
   voiceFailed: "Couldn't turn your recording into text. Try again, or type your message instead.",
   stopReading: "Stop reading",
+  readAll: "Read all",
 
   // ---- Settings (this device) ----
   settingsTitle: "Settings",
@@ -334,4 +335,29 @@ export const copy = deepFreeze({
   doctorBad: "Needs attention",
   doctorFailed: "Couldn't run the checks. Check the connection and try again.",
   doctorNone: "No checks to show.",
+  checkAgain: "Check again",
+  doctorLabel: (/** @type {string | number} */ id) => {
+    const s = String(id);
+    if (s.startsWith("tmux-mouse:")) return `Scrolling in tmux (${s.slice("tmux-mouse:".length).split("/").pop()})`;
+    /** @type {Record<string, string>} */
+    const names = {
+      "extension:porthole-events": "omp extension: events",
+      "extension:live-inbox": "omp extension: inbox",
+      "events-socket": "Live events channel",
+      voxtype: "Voice typing",
+      git: "git",
+      "state-dir": "Porthole's saved files",
+    };
+    return names[s] ?? s;
+  },
+  labelTooLong: (/** @type {string | number} */ max) => `Keep the name to ${max} characters or fewer.`,
+  labelTaken: "You already have a shortcut with that name. Pick another name.",
+  editShortcut: "Edit",
+  cancel: "Cancel",
+  rangesHelp: "Port ranges such as 3000-3999, 5173, or none to turn previews off.",
+  peersHelp: "One address per line, for example https://laptop.example.ts.net. A change here needs a restart of Porthole on this machine.",
+  prefixInvalid: "Use one key, such as C-b or C-a.",
+  machineSaveFailed: "Couldn't save the machine list on this device. Try again.",
+  notificationsFailed: "Couldn't open the notification settings. Try again.",
+  scaleValue: (/** @type {number | string} */ s) => `${Math.round(Number(s) * 1000) / 10} %`,
 });

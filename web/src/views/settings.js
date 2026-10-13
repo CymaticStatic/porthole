@@ -20,14 +20,6 @@ export const DEFAULT_TERM_FONT_PX = 14;
 export const DEFAULT_PREFIX = "C-b";
 const MACHINES_KEY = "porthole:machines";
 
-// Sentences this screen needs that copy.js (task A8) does not have yet. Report: move into copy.js, then delete here.
-const LOCAL = {
-  prefixInvalid: "Use one key, such as C-b or C-a.",
-  machineSaveFailed: "Couldn't save the machine list on this device. Try again.",
-  notificationsFailed: "Couldn't open the notification settings. Try again.",
-  scaleValue: (/** @type {number} */ s) => `${Math.round(s * 1000) / 10} %`,
-};
-
 /** @param {string} title @param {...(Node | string | null | false)} kids */
 export function section(title, ...kids) {
   return h("section", { class: "set-section" }, h("h2", { class: "set-heading" }, title), ...kids);
@@ -78,7 +70,7 @@ function gestureDiff(map) {
 export function checkPrefix(text) {
   const r = parseSteps(text.trim());
   if (!r.ok) return { ok: false, reason: r.reason };
-  if (r.steps.length !== 1 || r.steps[0].startsWith("text:")) return { ok: false, reason: LOCAL.prefixInvalid };
+  if (r.steps.length !== 1 || r.steps[0].startsWith("text:")) return { ok: false, reason: copy.prefixInvalid };
   return { ok: true, key: r.steps[0] };
 }
 
@@ -136,7 +128,7 @@ export function mount(root, ctx) {
         on: {
           click: () => {
             const next = machineList.filter((x) => x.origin !== m.origin);
-            if (!saveMachines(next)) return showMachineError(LOCAL.machineSaveFailed);
+            if (!saveMachines(next)) return showMachineError(copy.machineSaveFailed);
             location.reload();
           },
         },
@@ -171,7 +163,7 @@ export function mount(root, ctx) {
           const port = location.port ? ":" + location.port : "";
           const origin = `${location.protocol}//${name}${tail}${port}`;
           if (machineList.some((m) => m.name === name || m.origin === origin)) return showMachineError(copy.machineExists);
-          if (!saveMachines([...machineList, { name, origin }])) return showMachineError(LOCAL.machineSaveFailed);
+          if (!saveMachines([...machineList, { name, origin }])) return showMachineError(copy.machineSaveFailed);
           location.reload();
         },
       },
@@ -202,7 +194,7 @@ export function mount(root, ctx) {
     termSmaller.disabled = nextFontSize(px, -1) === px;
     termBigger.disabled = nextFontSize(px, 1) === px;
     const i = scaleIndex(store.get().textScale);
-    scaleValue.textContent = LOCAL.scaleValue(TEXT_SCALES[i]);
+    scaleValue.textContent = copy.scaleValue(TEXT_SCALES[i]);
     scaleSmaller.disabled = i === 0;
     scaleBigger.disabled = i === TEXT_SCALES.length - 1;
     applyScale(TEXT_SCALES[i]);
@@ -293,7 +285,7 @@ export function mount(root, ctx) {
   /** @type {HTMLElement | null} */
   let notificationsSection = null;
   if (ctx.bridge?.available) {
-    const failed = h("p", { class: "set-error", role: "alert", hidden: true }, LOCAL.notificationsFailed);
+    const failed = h("p", { class: "set-error", role: "alert", hidden: true }, copy.notificationsFailed);
     notificationsSection = section(copy.notifications,
       h("button", {
         type: "button",

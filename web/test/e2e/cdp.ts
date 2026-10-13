@@ -208,6 +208,8 @@ export async function connectPage(port: number): Promise<Page> {
     },
     async onNewDocument(source) {
       await send("Page.addScriptToEvaluateOnNewDocument", { source });
+      // The stack has already loaded the page, and a hash-only goto() keeps that document: the script must be in force there too.
+      await send("Runtime.evaluate", { expression: source });
     },
     async touch(type, points) {
       await send("Input.dispatchTouchEvent", { type, touchPoints: points });

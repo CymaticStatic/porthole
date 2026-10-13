@@ -22,11 +22,11 @@ export function createKeyRow({ ctx, machine, sessionId }) {
   let errorTimer = null;
 
   const row = h("div", { class: "keyrow", "data-test": "keyrow", role: "group", "aria-label": copy.keyRow });
-  const note = h("p", { class: "keyrow-note", "data-test": "keyrow-note" });
   const problem = h("p", { class: "keyrow-problem", "data-test": "keyrow-error", role: "status" });
-  note.hidden = true;
   problem.hidden = true;
-  const el = h("div", { class: "keyrow-wrap" }, row, note, problem);
+  const el = h("div", { class: "keyrow-wrap" }, row, problem);
+  /** @type {HTMLElement | null} the "why it is off" note: in the page only while live voice is on */
+  let note = null;
 
   /** @param {string} text */
   function showProblem(text) {
@@ -77,8 +77,12 @@ export function createKeyRow({ ctx, machine, sessionId }) {
     if (next === liveVoice) return;
     liveVoice = next;
     for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (row.querySelectorAll("button"))) b.disabled = liveVoice;
-    note.hidden = !liveVoice;
-    note.textContent = liveVoice ? copy.liveVoiceKeys : "";
+    note?.remove();
+    note = null;
+    if (liveVoice) {
+      note = h("p", { class: "keyrow-note", "data-test": "keyrow-note" }, copy.liveVoiceKeys);
+      row.after(note);
+    }
   }
 
   async function loadShortcuts() {

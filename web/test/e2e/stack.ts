@@ -109,15 +109,21 @@ function fixtureText(file: string): string {
   throw new Error("fixture " + file + " is in neither " + WEB_FIXTURES + " nor " + SERVER_FIXTURES);
 }
 
-async function makeEntry(s: Scratch, f: string): Promise<Entry> {
+/** All of a machine's fixtures live on one scratch tmux server (one socket per machine, like a real desk): the first fixture sets `shared.socket`. */
+interface Shared { socket?: string }
+
+async function makeEntry(s: Scratch, f: string, shared: Shared): Promise<Entry> {
   if (f.endsWith(".jsonl")) {
     const session = f.slice(0, -".jsonl".length);
     const transcript = s.writeTranscript(f, fixtureText(f));
-    return { pane: await ompPane(s, session, transcript), session, transcript };
+    const p = await ompPane(s, session, transcript, shared.socket);
+    shared.socket = p.socket;
+    return { pane: p, session, transcript };
   }
   if (f.startsWith("shell:")) {
     const session = f.slice("shell:".length);
-    const p = await pane(s, session, "/bin/sh");
+    const p = await pane(s, session, "/bin/sh", shared.socket);
+    shared.socket = p.socket;
     s.tmux(p.socket, "new-window", "-d", "-t", "=" + session + ":1", "-c", s.root, "/bin/sh");
     return { pane: p, session, transcript: null };
   }
@@ -134,7 +140,9 @@ async function makeEntry(s: Scratch, f: string): Promise<Entry> {
     git(dir, "add", "staged.txt");
     writeFileSync(path.join(dir, "unstaged.txt"), "alpha\nbeta\n" + "x".repeat(200) + "\n");
     writeFileSync(path.join(dir, "new.txt"), "a new file\n");
-    const socket = s.newTmuxServer(session, "/bin/sh", dir);
+    if (shared.socket) s.tmux(shared.socket, "new-session", "-d", "-s", session, "-x", "120", "-y", "40", "-c", dir, "/bin/sh");
+    const socket = shared.socket ?? s.newTmuxServer(session, "/bin/sh", dir);
+    shared.socket = socket;
     const p: TestPane = { socket, pid: s.panePid(socket, "=" + session + ":0.0"), id: makeSessionId({ kind: "tmux", socket, session, window: 0, pane: 0 }) };
     return { pane: p, session, transcript: null };
   }
@@ -204,7 +212,8 @@ export async function startStack(opts: StackOptions): Promise<Stack> {
       sides[m] = { name: "test" + m, origin: origin(m), scratch, hostd, proxy, entries: new Map(), voicePids: new Set() };
     }
     for (const m of ["desk", "laptop"] as const) {
-      for (const f of opts.fixtures[m]) sides[m].entries.set(f, await makeEntry(sides[m].scratch, f));
+      const shared: Shared = {};
+      for (const f of opts.fixtures[m]) sides[m].entries.set(f, await makeEntry(sides[m].scratch, f, shared));
     }
 
     const entry = (m: Machine, f: string): Entry => {

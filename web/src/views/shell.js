@@ -290,11 +290,26 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
 
   const onHash = () => sync();
 
+  // The terminal fills what is left under the chrome; keep --term-offset equal to the chrome's real height.
+  const chrome = [topbar, notice, strip.el];
+  const syncOffset = () => {
+    const px = chrome.reduce((sum, el) => sum + (el.hidden ? 0 : el.offsetHeight), 0);
+    shell.style.setProperty("--term-offset", `${px}px`);
+  };
+  /** @type {ResizeObserver | null} */
+  let chromeObserver = null;
+
   return {
     start() {
       app.removeAttribute("aria-live");
       app.replaceChildren(shell);
       applyDrawer();
+      syncOffset();
+      if (typeof globalThis.ResizeObserver === "function") {
+        const obs = new globalThis.ResizeObserver(syncOffset);
+        for (const el of chrome) obs.observe(el);
+        chromeObserver = obs;
+      }
       mql.addEventListener("change", onWideChange);
       win.addEventListener("hashchange", onHash);
       win.addEventListener("popstate", onPop);
@@ -315,6 +330,7 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
       doc.removeEventListener("touchmove", onTouchMove);
       doc.removeEventListener("touchend", onTouchEnd);
       strip.destroy();
+      chromeObserver?.disconnect();
       sidebar.destroy();
       if (current) void unmountOne(current);
       current = null;

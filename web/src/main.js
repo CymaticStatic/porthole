@@ -129,6 +129,12 @@ async function boot() {
   const settings = createSettings(store, window);
   const bridge = createBridge(window);
   const id = deviceId(store);
+  const applyTextScale = () => {
+    const s = settings.get().textScale;
+    if (typeof s === "number" && Number.isFinite(s) && s > 0) document.documentElement.style.setProperty("--fs-scale", String(s));
+  };
+  applyTextScale();
+  settings.subscribe(applyTextScale);
   const fetchFn = window.fetch.bind(window);
   const machines = await loadMachines({ bridge, storage: store, origin: window.location.origin, fetch: fetchFn });
   const outbox = createOutbox(store);

@@ -11,30 +11,7 @@ import { section, toggleRow } from "./settings.js";
 // hostd's rules, repeated here so a bad name is caught before the request. See server/src/features/shortcuts.ts.
 const LABEL_MAX = 40;
 
-// Sentences this screen needs that copy.js (task A8) does not have yet. Report: move into copy.js, then delete here.
-const LOCAL = {
-  labelTooLong: `Keep the name to ${LABEL_MAX} characters or fewer.`,
-  labelTaken: "You already have a shortcut with that name. Pick another name.",
-  editShortcut: "Edit",
-  cancel: "Cancel",
-  rangesHelp: "Port ranges such as 3000-3999, 5173, or none to turn previews off.",
-  peersHelp: "One address per line, for example https://laptop.example.ts.net. A change here needs a restart of Porthole on this machine.",
-  checkAgain: "Check again",
-  /** @param {string} id */
-  doctorLabel(id) {
-    if (id.startsWith("tmux-mouse:")) return `Scrolling in tmux (${id.slice("tmux-mouse:".length).split("/").pop()})`;
-    /** @type {Record<string, string>} */
-    const names = {
-      "extension:porthole-events": "omp extension: events",
-      "extension:live-inbox": "omp extension: inbox",
-      "events-socket": "Live events channel",
-      voxtype: "Voice typing",
-      git: "git",
-      "state-dir": "Porthole's saved files",
-    };
-    return names[id] ?? id;
-  },
-};
+const LABEL_TOO_LONG = copy.labelTooLong(LABEL_MAX);
 
 /** A message that says it is loading, then is replaced. @param {string} text */
 const note = (text) => h("p", { class: "set-note" }, text);
@@ -115,7 +92,7 @@ export function mount(root, ctx) {
   const previewBox = h("div", { class: "set-stack", "data-test": "shortcut-preview" });
   const errorLine = h("p", { class: "set-error", role: "alert", hidden: true, "data-test": "shortcut-error" });
   const saveButton = /** @type {HTMLButtonElement} */ (h("button", { type: "button", class: "btn btn-primary", disabled: true, "data-test": "shortcut-save" }, copy.shortcutSave));
-  const cancelButton = h("button", { type: "button", class: "btn", "data-test": "shortcut-cancel" }, LOCAL.cancel);
+  const cancelButton = h("button", { type: "button", class: "btn", "data-test": "shortcut-cancel" }, copy.cancel);
   const editor = h("div", { class: "set-editor", hidden: true, "data-test": "shortcut-editor" },
     h("label", { class: "set-field" }, h("span", {}, copy.shortcutLabel), labelInput),
     h("label", { class: "set-field" }, h("span", {}, copy.shortcutSteps), stepsInput),
@@ -131,8 +108,8 @@ export function mount(root, ctx) {
     const stepsText = stepsInput.value;
     /** @type {string} */
     let message = "";
-    if ([...label].length > LABEL_MAX) message = LOCAL.labelTooLong;
-    else if (label !== "" && items.some((it) => it.label === label && it.label !== editing)) message = LOCAL.labelTaken;
+    if ([...label].length > LABEL_MAX) message = LABEL_TOO_LONG;
+    else if (label !== "" && items.some((it) => it.label === label && it.label !== editing)) message = copy.labelTaken;
     const parsed = parseSteps(stepsText);
     if (message === "" && stepsText.trim() !== "" && !parsed.ok) message = copy.reasonLine(parsed.reason);
     return { message, canSave: message === "" && label !== "" && parsed.ok, parsed };
@@ -143,7 +120,7 @@ export function mount(root, ctx) {
     const { message, canSave, parsed } = check();
     errorLine.textContent = message;
     errorLine.hidden = message === "";
-    labelInput.setAttribute("aria-invalid", String(message === LOCAL.labelTooLong || message === LOCAL.labelTaken));
+    labelInput.setAttribute("aria-invalid", String(message === LABEL_TOO_LONG || message === copy.labelTaken));
     stepsInput.setAttribute("aria-invalid", String(message !== "" && parsed.ok === false));
     saveButton.disabled = !canSave || saving;
     previewBox.replaceChildren(...(parsed.ok ? [h("span", { class: "set-sub" }, copy.shortcutPreview), chips(stepsInput.value)] : []));
@@ -204,7 +181,7 @@ export function mount(root, ctx) {
         h("div", { class: "set-row set-row-stack", "data-test": "shortcut-row", "data-label": it.label },
           h("span", { class: "set-row-text" }, h("strong", {}, it.label), chips(it.steps)),
           h("div", { class: "set-actions" },
-            h("button", { type: "button", class: "btn", "aria-label": `${LOCAL.editShortcut} ${it.label}`, on: { click: () => openEditor(it) } }, LOCAL.editShortcut),
+            h("button", { type: "button", class: "btn", "aria-label": `${copy.editShortcut} ${it.label}`, on: { click: () => openEditor(it) } }, copy.editShortcut),
             h("button", {
               type: "button",
               class: "btn",
@@ -277,11 +254,11 @@ export function mount(root, ctx) {
     });
     hostBody.replaceChildren(
       h("label", { class: "set-field" }, h("span", {}, labels.previewRanges), rangesInput),
-      h("p", { class: "set-note" }, LOCAL.rangesHelp),
+      h("p", { class: "set-note" }, copy.rangesHelp),
       usage.el,
       voice.el,
       h("label", { class: "set-field" }, h("span", {}, labels.peers), peersInput),
-      h("p", { class: "set-note" }, LOCAL.peersHelp),
+      h("p", { class: "set-note" }, copy.peersHelp),
       h("div", { class: "set-actions" }, save),
       result,
       failure);
@@ -297,12 +274,12 @@ export function mount(root, ctx) {
       h("div", { class: `doctor-row ${c.ok ? "doctor-ok" : "doctor-bad"}`, "data-test": "doctor-check", "data-id": c.id, "data-ok": String(c.ok === true) },
         h("span", { class: "doctor-mark", "aria-hidden": "true" }, c.ok ? "✓" : "▲"),
         h("span", { class: "set-row-text" },
-          h("strong", {}, LOCAL.doctorLabel(String(c.id))),
+          h("strong", {}, copy.doctorLabel(String(c.id))),
           h("span", { class: "doctor-word" }, c.ok ? copy.doctorOk : copy.doctorBad),
           !c.ok && c.detail ? h("span", { class: "set-sub" }, copy.reasonLine(c.detail)) : null)));
     doctorBody.replaceChildren(
       ...(rows.length > 0 ? rows : [note(copy.doctorNone)]),
-      h("div", { class: "set-actions" }, h("button", { type: "button", class: "btn", "data-test": "doctor-again", on: { click: runDoctor } }, LOCAL.checkAgain)));
+      h("div", { class: "set-actions" }, h("button", { type: "button", class: "btn", "data-test": "doctor-again", on: { click: runDoctor } }, copy.checkAgain)));
   };
   function runDoctor() {
     loadInto(doctorBody, () => api.get("/v1/doctor"), copy.doctorFailed, renderChecks, isAlive);

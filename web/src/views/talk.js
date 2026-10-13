@@ -169,8 +169,6 @@ const speakerGlyph = () => h("span", { class: "talk-glyph-speaker", "aria-hidden
 export function attachReadAloud(ctx, chatEvents) {
   const { copy } = ctx;
   const speaker = createSpeaker(ctx);
-  // The "Read all" label is the one string this file needs that copy.js did not have when it was written.
-  const readAllLabel = /** @type {Record<string, string>} */ (/** @type {unknown} */ (copy)).readAll;
 
   const pill = h("button", { type: "button", class: "talk-stop-reading", "data-test": "stop-reading", hidden: true, on: { click: () => speaker.stop() } }, speakerGlyph(), copy.stopReading);
   document.body.append(pill);
@@ -195,9 +193,9 @@ export function attachReadAloud(ctx, chatEvents) {
     speaking: () => speaker.speaking(),
     onChange: (fn) => speaker.onChange(fn),
     button(getMarkdown) {
-      const label = h("span", { class: "talk-speaker-label" }, readAllLabel);
+      const label = h("span", { class: "talk-speaker-label" }, copy.readAll);
       const el = h("button", { type: "button", class: "talk-speaker", "data-test": "read-all", on: { click: () => api.readAll(getMarkdown()) } }, speakerGlyph(), label);
-      buttonCleanups.push(speaker.onChange((on) => { label.textContent = on ? copy.stopReading : readAllLabel; }));
+      buttonCleanups.push(speaker.onChange((on) => { label.textContent = on ? copy.stopReading : copy.readAll; }));
       return el;
     },
     detach() {

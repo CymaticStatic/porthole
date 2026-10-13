@@ -149,9 +149,10 @@
   background: var(--scrim);
   opacity: 0;
   visibility: hidden;
+  pointer-events: none; /* while it fades out it must not swallow the tap meant for the menu button under it */
   transition: opacity var(--dur-3) var(--ease), visibility 0s linear var(--dur-3);
 }
-.drawer-open .scrim { opacity: 1; visibility: visible; transition: opacity var(--dur-3) var(--ease), visibility 0s; }
+.drawer-open .scrim { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity var(--dur-3) var(--ease), visibility 0s; }
 
 /* ---- Sidebar content ---- */
 .side { display: flex; flex-direction: column; flex: 1; min-block-size: 0; }
