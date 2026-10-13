@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { statSync } from "node:fs";
+import { statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { InboxItem } from "../src/events/inbox";
-import { KEEP_MS, MAX_PER_DEVICE, NotifyQueue, buildNotify } from "../src/events/notify";
+import { MAX_HELD, KEEP_MS, MAX_PER_DEVICE, NotifyQueue, buildNotify } from "../src/events/notify";
 import type { NotifyMsg } from "../src/events/notify";
 import { Scratch } from "./helpers/scratch";
 
@@ -82,4 +82,37 @@ test("P2.3: the 61st notification in a minute is held back, then released", () =
   expect(released.map((m) => m.itemId)).toEqual(["late"]);
   expect(released[0].id).toBe(61);
   expect(sent).toHaveLength(61);
+});
+
+test("held notifications: capped at 200 (oldest dropped), built from the current item at release", () => {
+  const sent: NotifyMsg[] = [];
+  const closed = new Set<string>();
+  const q = new NotifyQueue({
+    file: path.join(s.stateDir, "held.json"), now: () => clock, send: (m) => sent.push(m),
+    current: (id) => {
+      const it = item(id, ["yes", "no"]);
+      if (closed.has(id) && it.question) it.question.open = false;
+      return it;
+    },
+  });
+  for (let i = 0; i < 60; i++) q.notify(item("s" + i, []));
+  for (let i = 0; i < MAX_HELD + 25; i++) expect(q.notify(item("h" + i, ["a", "b"]))).toBeNull();
+  closed.add("h30");
+  clock += 61_000;
+  const out: NotifyMsg[] = [];
+  for (let n = 0; n < 8; n++) { out.push(...q.tick()); clock += 61_000; }
+  const held = out.filter((m) => m.itemId.startsWith("h"));
+  expect(held).toHaveLength(MAX_HELD);
+  expect(held[0].itemId).toBe("h25");
+  expect(held.at(-1)?.itemId).toBe("h" + (MAX_HELD + 24));
+  // Rebuilt from the current item: the one whose question closed while it waited has no buttons, the rest do.
+  expect(held.find((m) => m.itemId === "h30")?.options).toEqual([]);
+  expect(held.find((m) => m.itemId === "h31")?.options).toEqual([{ index: 0, label: "yes" }, { index: 1, label: "no" }]);
+});
+
+test("a corrupt queue file restarts ids from an epoch-seconds base, above any earlier count", () => {
+  const file = path.join(s.stateDir, "corrupt.json");
+  writeFileSync(file, "{not json");
+  const q = new NotifyQueue({ file, now: () => 1_760_000_000_000, send: () => undefined });
+  expect(q.notify(item("i1", []))?.id).toBe(1_760_000_000);
 });

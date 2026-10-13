@@ -1,7 +1,7 @@
 // The inbox (SPEC 4.6): one live item per session key, three columns, lifetimes driven by an injected clock.
 // Persisted to one JSON file (0600, write-then-rename) after every change.
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { OmpEvent } from "./socket";
 
@@ -27,7 +27,8 @@ function isItem(v: unknown): v is InboxItem {
   if (typeof v !== "object" || v === null) return false;
   const o = v as Record<string, unknown>;
   return typeof o.id === "string" && typeof o.key === "string" && typeof o.sessionId === "string"
-    && typeof o.column === "string" && typeof o.createdAt === "number" && typeof o.updatedAt === "number";
+    && typeof o.column === "string" && typeof o.createdAt === "number" && typeof o.updatedAt === "number"
+    && (o.archivedAt === null || typeof o.archivedAt === "number") && (o.doneAt === null || typeof o.doneAt === "number");
 }
 
 export class InboxStore {
@@ -57,7 +58,7 @@ export class InboxStore {
           live.sessionId = sessionId;
           live.project = e.cwd;
           live.title = this.titleFor(e.cwd, live.title);
-          live.updatedAt = now;
+          this.resumeWork(live, now);
           return this.finish(live, false, false);
         }
         // A session that just started has not begun a turn: it sits in "done" (archived 10 minutes later) until its first event.
@@ -90,12 +91,8 @@ export class InboxStore {
       case "working": {
         const item = live ?? this.create(key, sessionId, "omp", "", "working", "Working");
         item.sessionId = sessionId;
-        item.updatedAt = now;
-        if (!(item.column === "needs-you" && item.question?.open === true)) {
-          item.column = "working";
-          item.doneAt = null;
-          item.body = "Working";
-        }
+        // A new turn can only start after every ask has ended, so a question still open here lost its question_closed.
+        this.resumeWork(item, now);
         return this.finish(item, false, false);
       }
       case "turn_finished": {
@@ -197,6 +194,15 @@ export class InboxStore {
     return moved;
   }
 
+  /** The item is working now: any open question is gone (its close event was lost), the done time is cleared. */
+  private resumeWork(item: InboxItem, now: number): void {
+    if (item.question?.open) { item.question.open = false; item.question.outcome = "cancelled"; }
+    item.column = "working";
+    item.doneAt = null;
+    item.body = "Working";
+    item.updatedAt = now;
+  }
+
   private liveFor(key: string): InboxItem | undefined {
     return this.items.find((i) => i.key === key && i.archivedAt === null);
   }
@@ -219,7 +225,8 @@ export class InboxStore {
   }
 
   private finish(item: InboxItem, becameNeedsYou: boolean, turnFinished: boolean): Change {
-    this.save();
+    // A disk failure must not lose the Change: the in-memory item is already updated and the notification still goes out.
+    try { this.save(); } catch (err) { console.error("porthole inbox: save failed:", err instanceof Error ? err.message : err); }
     return { item: snapshot(item), becameNeedsYou, turnFinished };
   }
 
@@ -236,6 +243,7 @@ export class InboxStore {
     mkdirSync(path.dirname(this.file), { recursive: true, mode: 0o700 });
     const tmp = this.file + ".tmp";
     writeFileSync(tmp, JSON.stringify({ nextId: this.nextId, items: this.items }), { mode: 0o600 });
+    chmodSync(tmp, 0o600);
     renameSync(tmp, this.file);
   }
 }

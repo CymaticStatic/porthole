@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { Auth } from "../src/auth/auth";
 import { Whois } from "../src/auth/identity";
 import { defaultConfig, parseRanges } from "../src/config";
-import { DIFF_SAFE, DirtyCache, filterOverrides, safeGit } from "../src/diff/git";
-import { PIDS_DIR } from "../src/pids";
+import { DIFF_SAFE, DirtyCache, filterOverrides, gitEnv, safeGit } from "../src/diff/git";
+import { pidsDir } from "../src/pids";
 import { sessionsFeature } from "../src/features/sessions";
 import type { FeatureFactory } from "../src/router";
 import { Registry } from "../src/sessions/registry";
@@ -109,10 +109,10 @@ test("safeGit runs no repo-configured program and takes no lock", async () => {
 });
 
 test("a pid file marks every running hostd (Task 8 reads it) and goes away on stop", async () => {
-  const file = path.join(PIDS_DIR, String(process.pid));
+  const file = path.join(pidsDir(s.runtimeDir), String(process.pid));
   const first = await startTestHostd(s, [sessionsFeature]);
   expect(existsSync(file)).toBe(true);
-  expect(statSync(PIDS_DIR).mode & 0o777).toBe(0o700);
+  expect(statSync(pidsDir(s.runtimeDir)).mode & 0o777).toBe(0o700);
   const second = await startTestHostd(s, [sessionsFeature]);
   await second.stop();
   expect(existsSync(file)).toBe(true); // both hostds share this process: the first one still runs
@@ -121,7 +121,7 @@ test("a pid file marks every running hostd (Task 8 reads it) and goes away on st
 });
 
 test("a start() failure, then stop() twice, never unregisters a pid this hostd did not register", async () => {
-  const file = path.join(PIDS_DIR, String(process.pid));
+  const file = path.join(pidsDir(s.runtimeDir), String(process.pid));
   const keeper = await startTestHostd(s, [sessionsFeature]);
   const boom: FeatureFactory = () => ({ routes: [], channels: [], async start() { throw new Error("start failed"); } });
   // createHostd calls its own stop() when a start() throws; startTestHostd rejects with the same error
@@ -138,10 +138,11 @@ test("a start() failure, then stop() twice, never unregisters a pid this hostd d
 test("Ben's own git settings (colour always, no prefixes) cannot change the diff format", async () => {
   const dir = repo("hostile");
   writeFileSync(path.join(dir, "a.txt"), "two\n");
-  const hostile = path.join(s.root, "hostile-gitconfig");
-  writeFileSync(hostile, "[color]\n\tui = always\n[diff]\n\tnoprefix = true\n\tmnemonicPrefix = true\n");
-  const before = process.env.GIT_CONFIG_GLOBAL;
-  process.env.GIT_CONFIG_GLOBAL = hostile;
+  const home = path.join(s.root, "hostile-home");
+  mkdirSync(home, { recursive: true });
+  writeFileSync(path.join(home, ".gitconfig"), "[color]\n\tui = always\n[diff]\n\tnoprefix = true\n\tmnemonicPrefix = true\n");
+  const before = process.env.HOME;
+  process.env.HOME = home;
   try {
     const r = await safeGit(s.config(), dir, ["diff", ...DIFF_SAFE, "--patch"]);
     expect(r.code).toBe(0);
@@ -150,8 +151,8 @@ test("Ben's own git settings (colour always, no prefixes) cannot change the diff
     expect(r.stdout).toContain("--- a/a.txt");
     expect(r.stdout).toContain("+++ b/a.txt");
   } finally {
-    if (before === undefined) delete process.env.GIT_CONFIG_GLOBAL;
-    else process.env.GIT_CONFIG_GLOBAL = before;
+    if (before === undefined) delete process.env.HOME;
+    else process.env.HOME = before;
   }
 });
 
@@ -174,4 +175,52 @@ test("sessions carry dirty: true, false, or null outside a repo", async () => {
   expect([byName.c, byName.d, byName.p]).toEqual([false, true, null]);
   const cache = new DirtyCache(cfg, 60_000);
   expect(await cache.lookup(dirty)).toBe(true);
+});
+
+test("safeGit drops every inherited GIT_* variable before adding its own", async () => {
+  const clean = repo("env-clean");
+  const other = repo("env-other");
+  writeFileSync(path.join(other, "new.txt"), "untracked\n");
+  const keep = { GIT_DIR: process.env.GIT_DIR, GIT_WORK_TREE: process.env.GIT_WORK_TREE, GIT_INDEX_FILE: process.env.GIT_INDEX_FILE };
+  process.env.GIT_DIR = path.join(other, ".git");
+  process.env.GIT_WORK_TREE = other;
+  process.env.GIT_INDEX_FILE = path.join(other, ".git", "index");
+  try {
+    const cfg = s.config();
+    const status = await safeGit(cfg, clean, ["status", "--porcelain=v2", "--untracked-files=normal"]);
+    expect([status.code, status.stdout]).toEqual([0, ""]);
+    const top = await safeGit(cfg, clean, ["rev-parse", "--show-toplevel"]);
+    expect(top.stdout.trim()).toBe(realpathSync(clean));
+    expect(gitEnv().GIT_DIR).toBeUndefined();
+    expect(gitEnv().GIT_OPTIONAL_LOCKS).toBe("0");
+    expect(await new DirtyCache(cfg).lookup(clean)).toBe(false);
+  } finally {
+    for (const [k, v] of Object.entries(keep)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+});
+
+test("DirtyCache: one git run per folder at a time, a slow run returns null at the deadline and fills the cache, stale values return at once", async () => {
+  const dir = repo("slow");
+  const log = path.join(s.root, "git-calls.log");
+  // Fake git: records its arguments, takes 0.3 s, and reports one changed file for `status`.
+  const fake = s.writeFake("slow-git", "#!/bin/sh\necho \"$*\" >> '" + log + "'\nsleep 0.3\ncase \"$*\" in *status*) echo changed;; esac\nexit 0\n");
+  const base = s.config();
+  const cfg = { ...base, bin: { ...base.bin, git: fake } };
+  const statusRuns = () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter((l) => l.includes("status")).length : 0);
+
+  const cache = new DirtyCache(cfg, 0, 100);
+  const t0 = Date.now();
+  const first = await Promise.all([cache.lookup(dir), cache.lookup(dir), cache.lookup(dir)]);
+  expect(first).toEqual([null, null, null]);
+  expect(Date.now() - t0).toBeLessThan(500);
+  await waitFor(async () => (await cache.lookup(dir)) === true, 4000);
+  expect(statusRuns()).toBeLessThanOrEqual(2); // 3 concurrent callers shared one run; at most one background refresh since
+
+  const t1 = Date.now();
+  expect(await cache.lookup(dir)).toBe(true); // maxAge 0: stale, returned at once while a refresh runs behind it
+  expect(Date.now() - t1).toBeLessThan(150);
+  await waitFor(() => statusRuns() >= 2, 4000);
 });

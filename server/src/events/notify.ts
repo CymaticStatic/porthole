@@ -5,7 +5,7 @@ import path from "node:path";
 import type { InboxItem } from "./inbox";
 
 export interface NotifyMsg { type: "notify"; id: number; itemId: string; title: string; body: string; options: { index: number; label: string }[]; at: string }
-export const MAX_PER_DEVICE = 100, KEEP_MS = 24 * 3_600_000, PER_MINUTE = 60;
+export const MAX_PER_DEVICE = 100, KEEP_MS = 24 * 3_600_000, PER_MINUTE = 60, MAX_HELD = 200;
 
 const WINDOW_MS = 60_000;
 
@@ -40,11 +40,14 @@ export class NotifyQueue {
   private devices: Record<string, Entry[]> = {};
   private sentAt: number[] = [];
   private held: InboxItem[] = [];
+  /** Looks an item up again at release time, so held notifications show its state then, not when it was queued. */
+  private readonly current: ((itemId: string) => InboxItem | undefined) | undefined;
 
-  constructor(opts: { file: string; now?: () => number; send: (msg: NotifyMsg) => void }) {
+  constructor(opts: { file: string; now?: () => number; send: (msg: NotifyMsg) => void; current?: (itemId: string) => InboxItem | undefined }) {
     this.file = opts.file;
     this.now = opts.now ?? Date.now;
     this.send = opts.send;
+    this.current = opts.current;
     this.load();
   }
 
@@ -58,6 +61,7 @@ export class NotifyQueue {
     this.trimWindow();
     if (this.held.length === 0 && this.sentAt.length < PER_MINUTE) return this.release(item);
     this.held.push(item);
+    if (this.held.length > MAX_HELD) this.held.splice(0, this.held.length - MAX_HELD);
     return null;
   }
 
@@ -97,8 +101,9 @@ export class NotifyQueue {
     this.sentAt = this.sentAt.filter((t) => now - t < WINDOW_MS);
   }
 
-  private release(item: InboxItem): NotifyMsg {
+  private release(queued: InboxItem): NotifyMsg {
     const now = this.now();
+    const item = this.current?.(queued.id) ?? queued;
     const msg = buildNotify(item, this.nextId++, new Date(now).toISOString());
     this.sentAt.push(now);
     for (const device of Object.keys(this.devices)) {
@@ -120,7 +125,9 @@ export class NotifyQueue {
         this.devices[device] = Array.isArray(list) ? list.filter(isEntry) : [];
       }
     } catch {
-      // An unreadable file starts a fresh queue; ids restart only if the file is truly lost.
+      // A corrupt file loses the saved counter, and devices may already hold higher ids (they drop repeats): restart from epoch seconds, above any earlier count.
+      this.nextId = Math.max(1, Math.floor(this.now() / 1000));
+      this.devices = {};
     }
   }
 

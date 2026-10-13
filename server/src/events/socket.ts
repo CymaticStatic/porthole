@@ -4,7 +4,7 @@
 import { chmodSync, existsSync, mkdirSync, rmSync, unlinkSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import type { UnixSocketListener } from "bun";
+import type { Socket, UnixSocketListener } from "bun";
 
 export type OmpEvent =
   | { type: "session_start"; pid: number; at: string; cwd: string; sessionFile: string | null; tmux: string | null; pane: string | null }
@@ -13,6 +13,7 @@ export type OmpEvent =
   | { type: "working" | "turn_finished" | "session_end"; pid: number; at: string };
 
 const MAX_CONNECTION_BYTES = 64 * 1024;
+const IDLE_MS = 10_000;
 const PROBE_MS = 300;
 const MAX_TEXT = 2000;
 const MAX_ID = 200;
@@ -115,30 +116,54 @@ function answers(file: string): Promise<boolean> {
   return promise;
 }
 
-interface ConnData { buf: string; decoder: TextDecoder }
+interface ConnData { buf: string; decoder: TextDecoder; total: number; overflow: boolean; timer: ReturnType<typeof setTimeout> | undefined }
 
 export class EventsSocket {
   private listener: UnixSocketListener<ConnData> | null = null;
+  private readonly idleMs: number;
 
-  constructor(private readonly file: string, private readonly onEvent: (e: OmpEvent) => void) {}
+  constructor(private readonly file: string, private readonly onEvent: (e: OmpEvent) => void, opts: { idleMs?: number } = {}) {
+    this.idleMs = opts.idleMs ?? IDLE_MS;
+  }
 
-  /** Creates the 0700 folder and the 0600 socket; refuses when another process already answers on it. */
+  /** Creates the socket's folder (0700, only when this call created it) and the 0600 socket; refuses when another process already answers on it. */
   async start(): Promise<void> {
     if (this.listener) return;
     const dir = path.dirname(this.file);
+    // A folder that already exists is not ours (a runtimeDir override may be shared), so its mode is left alone; the socket itself is 0600.
+    const created = !existsSync(dir);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    chmodSync(dir, 0o700);
+    if (created) chmodSync(dir, 0o700);
     if (existsSync(this.file)) {
       if (await answers(this.file)) throw new Error("another hostd already listens on " + this.file);
       unlinkSync(this.file);
     }
+    const idleMs = this.idleMs;
+    /** Drops a connection that is too slow or too large; later chunks are ignored. */
+    const drop = (sock: Socket<ConnData>): void => {
+      sock.data.overflow = true;
+      sock.data.buf = "";
+      clearTimeout(sock.data.timer);
+      sock.data.timer = undefined;
+      sock.terminate();
+    };
+    const arm = (sock: Socket<ConnData>): void => {
+      clearTimeout(sock.data.timer);
+      sock.data.timer = setTimeout(() => drop(sock), idleMs);
+    };
     this.listener = Bun.listen<ConnData>({
       unix: this.file,
       socket: {
-        open(sock) { sock.data = { buf: "", decoder: new TextDecoder() }; },
+        open(sock) {
+          sock.data = { buf: "", decoder: new TextDecoder(), total: 0, overflow: false, timer: undefined };
+          arm(sock);
+        },
         data: (sock, chunk) => {
+          if (sock.data.overflow) return;
+          sock.data.total += chunk.byteLength;
+          if (sock.data.total > MAX_CONNECTION_BYTES) { drop(sock); return; }
+          arm(sock);
           sock.data.buf += sock.data.decoder.decode(chunk, { stream: true });
-          if (sock.data.buf.length > MAX_CONNECTION_BYTES) { sock.data.buf = ""; sock.end(); return; }
           let i = sock.data.buf.indexOf("\n");
           while (i >= 0) {
             const e = parseEvent(sock.data.buf.slice(0, i));
@@ -147,6 +172,7 @@ export class EventsSocket {
             i = sock.data.buf.indexOf("\n");
           }
         },
+        close(sock) { clearTimeout(sock.data.timer); sock.data.timer = undefined; },
         error() { /* a broken client connection is not hostd's problem */ },
       },
     });

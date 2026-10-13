@@ -1,6 +1,7 @@
 // The inbox (SPEC 4.3, 4.6, 4.7): omp events and herdr statuses become items, notifications go out with replay,
 // and a question is answered through the key row. Stop is not here: the app uses POST /v1/sessions/:id/keys.
 
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { Deliverer } from "../deliver/deliver";
 import { answerRefusal, answerSteps, chunks, parseAnswer } from "../events/answer";
@@ -12,9 +13,25 @@ import { json, type FeatureFactory } from "../router";
 
 const TICK_MS = 5000;
 
+/**
+ * Ends every live omp item whose process is gone (the extension's session_end can be lost when omp exits fast).
+ * Items already in "done" are left alone: they archive on their own, and re-ending them would keep them alive.
+ */
+export function endDeadSessions(store: InboxStore, exists: (pid: number) => boolean = (pid) => existsSync("/proc/" + pid)): Change[] {
+  const out: Change[] = [];
+  for (const item of store.list()) {
+    if (item.kind !== "omp" || item.column === "done") continue;
+    const pid = Number(item.key.slice("omp:".length));
+    if (!Number.isInteger(pid) || pid <= 0 || exists(pid)) continue;
+    const change = store.omp({ type: "session_end", pid, at: new Date().toISOString() }, item.sessionId);
+    if (change) out.push(change);
+  }
+  return out;
+}
+
 export const inboxFeature: FeatureFactory = (d) => {
   const store = new InboxStore({ file: path.join(d.config.stateDir, "inbox.json"), machine: d.config.machineName });
-  const queue = new NotifyQueue({ file: path.join(d.config.stateDir, "notify.json"), send: (m) => { d.hub.broadcast(m); } });
+  const queue = new NotifyQueue({ file: path.join(d.config.stateDir, "notify.json"), send: (m) => { d.hub.broadcast(m); }, current: (id) => store.get(id) });
   const deliverer = new Deliverer(d.config, d.registry, d.sentLog);
   /** qids whose answer was started; a refusal before any key is sent takes the qid out again. */
   const answered = new Set<string>();
@@ -98,6 +115,7 @@ export const inboxFeature: FeatureFactory = (d) => {
       }));
       timer = setInterval(() => {
         queue.tick();
+        for (const c of endDeadSessions(store)) apply(c);
         if (store.sweep()) d.hub.broadcast({ type: "inbox", items: store.list() });
       }, TICK_MS);
     },

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { statSync } from "node:fs";
+import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { ANY_ARCHIVE_MS, ARCHIVE_KEEP_MS, DONE_ARCHIVE_MS, InboxStore } from "../src/events/inbox";
 import type { OmpEvent } from "../src/events/socket";
@@ -70,14 +70,55 @@ test("manual archive; the next event starts a new item; session end closes an op
   expect(st.get(second?.id ?? "")).toMatchObject({ column: "done", question: { open: false, outcome: "ended" } });
 });
 
-test("a stale question_closed does not close the current question; working keeps an open question needs-you", () => {
+test("a stale question_closed does not close the current question; turn_finished closes an open one", () => {
   const st = store();
   st.omp(ask(35, "q1"), "omp:35");
   expect(st.omp({ type: "question_closed", pid: 35, at, qid: "other", outcome: "answered" }, "omp:35")).toBeNull();
-  expect(st.omp({ type: "working", pid: 35, at }, "omp:35")?.item).toMatchObject({ column: "needs-you", question: { open: true } });
   const done = st.omp({ type: "turn_finished", pid: 35, at }, "omp:35");
   expect(done?.turnFinished).toBe(true);
   expect(done?.item).toMatchObject({ column: "done", question: { open: false, outcome: "cancelled" } });
+});
+
+test("a lost question_closed: working (or session_start) on the live item closes the question and clears the done time", () => {
+  const st = store();
+  st.omp(ask(36, "q1"), "omp:36");
+  const w = st.omp({ type: "working", pid: 36, at }, "omp:36");
+  expect(w?.item).toMatchObject({ column: "working", doneAt: null, body: "Working", question: { open: false, outcome: "cancelled" } });
+  expect(w?.becameNeedsYou).toBe(false);
+
+  st.omp(ask(37, "q1"), "omp:37");
+  st.omp({ type: "turn_finished", pid: 37, at }, "omp:37");
+  st.omp(ask(37, "q2"), "omp:37");
+  const s2 = st.omp({ type: "session_start", pid: 37, at, cwd: "/work/x", sessionFile: null, tmux: null, pane: null }, "omp:37");
+  expect(s2?.item).toMatchObject({ column: "working", doneAt: null, question: { qid: "q2", open: false, outcome: "cancelled" } });
+});
+
+test("an item loaded with a missing archivedAt is dropped, not treated as archived", () => {
+  const file = path.join(s.stateDir, "inbox-bad.json");
+  const good = { id: "i1", key: "omp:50", sessionId: "omp:50", machine: "m", project: "/p", kind: "omp", column: "working", title: "p", body: "Working", question: null, contextLeft: null, createdAt: clock, updatedAt: clock, doneAt: null, archivedAt: null };
+  const noArchived = { ...good, id: "i2", key: "omp:51", archivedAt: undefined };
+  const badDone = { ...good, id: "i3", key: "omp:52", doneAt: "x" };
+  writeFileSync(file, JSON.stringify({ nextId: 4, items: [good, noArchived, badDone] }));
+  const st = new InboxStore({ file, machine: "m", now: () => clock });
+  expect(st.list().map((i) => i.id)).toEqual(["i1"]);
+});
+
+test("the temp file is chmodded 0600, and a failing save still returns the Change", () => {
+  const dir = path.join(s.stateDir, "inbox-save");
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, "inbox.json");
+  writeFileSync(file + ".tmp", "stale", { mode: 0o644 });
+  const st = new InboxStore({ file, machine: "m", now: () => clock });
+  expect(st.omp({ type: "working", pid: 60, at }, "omp:60")?.item.column).toBe("working");
+  expect(statSync(file).mode & 0o777).toBe(0o600);
+
+  // The store file's path is a directory, so the rename fails: the change must still come back.
+  const blocked = path.join(s.stateDir, "inbox-blocked");
+  mkdirSync(path.join(blocked, "inbox.json"), { recursive: true });
+  const st2 = new InboxStore({ file: path.join(blocked, "inbox.json"), machine: "m", now: () => clock });
+  const c = st2.omp(ask(61, "q"), "omp:61");
+  expect(c?.becameNeedsYou).toBe(true);
+  expect(st2.list()[0]).toMatchObject({ column: "needs-you" });
 });
 
 test("items survive a restart, and the store file is private", () => {

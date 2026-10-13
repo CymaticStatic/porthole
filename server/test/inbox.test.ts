@@ -4,7 +4,8 @@ import net from "node:net";
 import path from "node:path";
 import { inboxDir } from "../src/deliver/inbox";
 import { answerSteps, chunks, parseAnswer } from "../src/events/answer";
-import { inboxFeature } from "../src/features/inbox";
+import { InboxStore } from "../src/events/inbox";
+import { endDeadSessions, inboxFeature } from "../src/features/inbox";
 import { sendFeature } from "../src/features/send";
 import { sessionsFeature } from "../src/features/sessions";
 import { get, openWs, pane, post, startTestHostd } from "./helpers/client";
@@ -222,4 +223,28 @@ test("Stop sends Esc through the keys route when live voice is off", async () =>
   const r = await post(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/keys", { keys: ["Esc"] });
   expect(r.status).toBe(200);
   await waitFor(() => screen(p, "stop").includes("^["), 3000);
+});
+
+test("endDeadSessions ends live omp items whose pid is gone, once, and leaves running and done ones alone", () => {
+  const store = new InboxStore({ file: path.join(s.stateDir, "inbox-dead.json"), machine: "m" });
+  const at = new Date().toISOString();
+  store.omp({ type: "working", pid: 2147480011, at }, "omp:2147480011");
+  store.omp({ type: "question_open", pid: 2147480012, at, qid: "dq", questions: [{ id: "c", question: "Q?", options: ["a", "b"], multi: false }] }, "omp:2147480012");
+  store.omp({ type: "working", pid: process.pid, at }, "omp:" + process.pid);
+  store.omp({ type: "turn_finished", pid: 2147480013, at }, "omp:2147480013");
+  const alive = new Set([process.pid]);
+  const ended = endDeadSessions(store, (pid) => alive.has(pid));
+  expect(ended.map((c) => c.item.key).sort()).toEqual(["omp:2147480011", "omp:2147480012"]);
+  const byKey = Object.fromEntries(store.list().map((i) => [i.key, i]));
+  expect(byKey["omp:2147480011"]).toMatchObject({ column: "done", body: "Session ended" });
+  expect(byKey["omp:2147480012"]).toMatchObject({ column: "done", question: { open: false, outcome: "ended" } });
+  expect(byKey["omp:" + process.pid]?.column).toBe("working");
+  expect(byKey["omp:2147480013"]?.body).toBe("Turn finished");
+  expect(endDeadSessions(store, (pid) => alive.has(pid))).toEqual([]);
+});
+
+test("hostd ends an item whose omp pid is gone within a few ticks", async () => {
+  await emit({ pid: 2147480021, type: "working" });
+  await waitFor(async () => (await items()).some((i) => i.sessionId === "omp:2147480021"), 3000);
+  await waitFor(async () => (await items()).find((i) => i.sessionId === "omp:2147480021")?.column === "done", 9000);
 });
