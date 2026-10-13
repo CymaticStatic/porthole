@@ -9,6 +9,7 @@ import { cleanEnv } from "../exec";
 import type { FeatureFactory, WsData } from "../router";
 import { readScreen } from "../sessions/herdr";
 import type { SessionInfo, Tree } from "../sessions/registry";
+import { liveVoiceBlocks } from "../sessions/guard";
 import { detachClient, listClients, socketPath } from "../sessions/tmux";
 
 type Ws = ServerWebSocket<WsData>;
@@ -19,6 +20,7 @@ const COLS = { min: 20, max: 400 };
 const ROWS = { min: 5, max: 200 };
 const KILL_AFTER_MS = 2000;
 const SCREEN_EVERY_MS = 1000;
+const FRESH_AFTER_IDLE_MS = 1000;
 const SCREEN_LINES = 200;
 const LIVE_VOICE_ON = "live voice is on; typing here would mix with it";
 const LIVE_VOICE_UNKNOWN = "cannot tell if live voice is on, so typing is off";
@@ -37,6 +39,7 @@ interface PtyState {
   chain: Promise<void>;
   screenTimer: NodeJS.Timeout | null;
   teardown: Promise<void> | null;
+  lastInputAt: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -74,14 +77,14 @@ export const ptyFeature: FeatureFactory = (d) => {
     for (const [ws, st] of open) {
       if (st.readonly || st.closed || st.proc === null) continue;
       const s = tree.sessions.find((x) => x.id === st.id);
-      if (s && s.liveVoice !== false) makeReadonly(ws, st, reasonFor(s.liveVoice));
+      if (s && liveVoiceBlocks(s)) makeReadonly(ws, st, reasonFor(s.liveVoice));
     }
   }
 
   async function attach(ws: Ws, st: PtyState, session: SessionInfo & { where: { kind: "tmux"; socket: string; session: string } }): Promise<void> {
     const cols = size(ws.data.query.get("cols"), DEFAULT_COLS, COLS.min, COLS.max);
     const rows = size(ws.data.query.get("rows"), DEFAULT_ROWS, ROWS.min, ROWS.max);
-    if (session.liveVoice !== false) makeReadonly(ws, st, reasonFor(session.liveVoice));
+    if (liveVoiceBlocks(session)) makeReadonly(ws, st, reasonFor(session.liveVoice));
     st.socket = session.where.socket;
     const proc = Bun.spawn([cfg.bin.tmux, "-S", socketPath(cfg, session.where.socket), "attach-session", "-t", "=" + session.where.session], {
       terminal: {
@@ -130,9 +133,14 @@ export const ptyFeature: FeatureFactory = (d) => {
 
   async function input(ws: Ws, st: PtyState, bytes: Uint8Array): Promise<void> {
     if (st.closed || st.readonly || st.proc === null) return;
-    const session = await d.registry.get(st.id, cfg.scanIntervalMs);
+    // SPEC 4.3 re-checks on every input frame: the first frame after an idle gap forces a fresh scan,
+    // later frames of a burst use the cached tree (at most scanIntervalMs old).
+    const now = Date.now();
+    const fresh = now - st.lastInputAt > FRESH_AFTER_IDLE_MS;
+    st.lastInputAt = now;
+    const session = await d.registry.get(st.id, fresh ? 0 : cfg.scanIntervalMs);
     if (st.closed || st.readonly || st.proc === null || session === null) return;
-    if (session.liveVoice !== false) {
+    if (liveVoiceBlocks(session)) {
       makeReadonly(ws, st, reasonFor(session.liveVoice));
       return;
     }
@@ -147,7 +155,11 @@ export const ptyFeature: FeatureFactory = (d) => {
     const m = msg as { type?: unknown; cols?: unknown; rows?: unknown };
     if (m.type !== "resize" || typeof m.cols !== "number" || typeof m.rows !== "number") return;
     if (!Number.isFinite(m.cols) || !Number.isFinite(m.rows)) return;
-    st.proc.terminal?.resize(clamp(m.cols, COLS.min, COLS.max), clamp(m.rows, ROWS.min, ROWS.max));
+    try {
+      st.proc.terminal?.resize(clamp(m.cols, COLS.min, COLS.max), clamp(m.rows, ROWS.min, ROWS.max));
+    } catch {
+      // The terminal is already closed (the attach process exited); nothing to resize.
+    }
   }
 
   // Detach only our own client (found by its pid), then make sure our own child is gone.
@@ -194,6 +206,7 @@ export const ptyFeature: FeatureFactory = (d) => {
             chain: Promise.resolve(),
             screenTimer: null,
             teardown: null,
+            lastInputAt: 0,
           };
           open.set(ws, st);
           d.registry.startWatching();
@@ -207,7 +220,7 @@ export const ptyFeature: FeatureFactory = (d) => {
           const st = open.get(ws);
           if (!st) return;
           if (typeof data === "string") {
-            st.chain = st.chain.then(() => control(st, data));
+            st.chain = st.chain.then(() => control(st, data)).catch(() => undefined);
           } else {
             const bytes = new Uint8Array(data);
             st.chain = st.chain.then(() => input(ws, st, bytes)).catch(() => undefined);

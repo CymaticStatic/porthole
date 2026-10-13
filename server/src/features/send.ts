@@ -7,10 +7,9 @@ import type { SendRecord } from "../deliver/sentlog";
 import { asRecord } from "../json";
 import { json, type FeatureFactory } from "../router";
 
-/** The record as the client sees it: never the text. */
-function publicRecord(r: SendRecord): Omit<SendRecord, "text"> {
-  const { text: _text, ...rest } = r;
-  return rest;
+/** The record as the client sees it: never the text, the pid or the inbox file path. */
+function publicRecord(r: SendRecord): Pick<SendRecord, "clientMsgId" | "sessionId" | "status" | "reason" | "route" | "at"> {
+  return { clientMsgId: r.clientMsgId, sessionId: r.sessionId, status: r.status, reason: r.reason, route: r.route, at: r.at };
 }
 
 async function readBody(req: Request): Promise<Record<string, unknown> | null> {

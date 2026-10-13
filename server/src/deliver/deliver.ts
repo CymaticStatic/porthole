@@ -9,6 +9,7 @@ import { ompAlive } from "../sessions/procs";
 import type { Registry, SessionInfo } from "../sessions/registry";
 import { sendKeys, sendText } from "../sessions/tmux";
 import type { TmuxWhere } from "../sessions/ids";
+import { liveVoiceBlocks } from "../sessions/guard";
 import { commitInbox, inboxDir, MAX_MESSAGE_BYTES, stageInbox, waitTaken } from "./inbox";
 import { HERDR_KEYS, TMUX_KEYS, type KeyStep } from "./keys";
 import type { SendRecord, SendRoute, SendStatus, SentLog } from "./sentlog";
@@ -85,8 +86,7 @@ export class Deliverer {
     if (info.kind === "herdr") {
       const where = info.where;
       if (where.kind !== "herdr") return refuse("no such session");
-      if (info.liveVoice === null) return refuse("cannot tell if live voice is on for this herdr pane");
-      if (info.liveVoice) return refuse("live voice is on");
+      if (liveVoiceBlocks(info)) return refuse(info.liveVoice === null ? "cannot tell if live voice is on for this herdr pane" : "live voice is on");
       if (info.herdrStatus === "blocked") return refuse("the agent is showing a question; answer it with the key row first");
       this.record(sessionId, clientMsgId, text, "pending", "", "herdr");
       const r = await prompt(this.cfg, where.pane, text);
@@ -96,9 +96,9 @@ export class Deliverer {
     }
 
     if (info.omp?.inbox) return this.viaInbox(sessionId, clientMsgId, text, info.omp.pid);
-    if (info.omp) {
-      if (info.liveVoice === true) return refuse("live voice is on and this omp has no inbox; turn live voice off or restart omp");
-      if (info.liveVoice === null) return refuse("cannot tell if live voice is on; refusing to type into this omp");
+    if (liveVoiceBlocks(info)) {
+      if (info.liveVoice === true) return refuse(info.omp ? "live voice is on and this omp has no inbox; turn live voice off or restart omp" : "live voice is on; refusing to type into this pane");
+      return refuse("cannot tell if live voice is on; refusing to type into this omp");
     }
     const where = info.where;
     if (where.kind !== "tmux") return refuse("no such session");
@@ -194,17 +194,14 @@ export class Deliverer {
   }
 
   private voiceRefusal(info: SessionInfo): string | null {
-    if (info.liveVoice === true) return "live voice is on; keys would mix with it";
-    if (info.liveVoice === null) return "cannot tell if live voice is on, so keys are off";
-    return null;
+    if (!liveVoiceBlocks(info)) return null;
+    return info.liveVoice === true ? "live voice is on; keys would mix with it" : "cannot tell if live voice is on, so keys are off";
   }
 
   private async tmuxKeys(info: SessionInfo, steps: KeyStep[]): Promise<KeyResult> {
     const where = info.where as TmuxWhere;
-    if (info.omp) {
-      const why = this.voiceRefusal(info);
-      if (why !== null) return { status: "refused", reason: why };
-    }
+    const why = this.voiceRefusal(info);
+    if (why !== null) return { status: "refused", reason: why };
     for (const step of steps) {
       let args: string[];
       if ("text" in step) args = ["-l", "--", step.text];

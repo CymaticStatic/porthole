@@ -50,12 +50,12 @@ export const chatFeature: FeatureFactory = (d) => {
     ws.close(1000);
   };
 
-  /** Stop any follower, send a fresh backlog of `file`, and follow `file` from the page's end. */
+  /** Read a fresh backlog of `file` first; only when that works, stop any old follower, send the backlog and follow `file`. A throw leaves the old follower running. */
   const follow = (ws: ServerWebSocket<WsData>, cs: ChatSocket, file: string): void => {
+    const page = readPage(file, null, DEFAULT_CHAT_LIMIT);
     cs.follower?.stop();
     cs.follower = null;
     cs.file = file;
-    const page = readPage(file, null, DEFAULT_CHAT_LIMIT);
     send(ws, { type: "backlog", page });
     const follower = new Follower(
       file,
@@ -66,7 +66,7 @@ export const chatFeature: FeatureFactory = (d) => {
         try {
           follow(ws, cs, file);
         } catch {
-          // The file vanished between the reset and the re-read: the next transcript change recovers.
+          // The file vanished between the reset and the re-read: the old follower keeps running and the next change resets again.
         }
       },
     );

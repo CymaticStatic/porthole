@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { appendFileSync, truncateSync } from "node:fs";
+import { appendFileSync, chmodSync, truncateSync } from "node:fs";
 import { chatFeature } from "../src/features/chat";
 import { sessionId } from "../src/sessions/ids";
 import { get, ompPane, openWs, pane, startTestHostd, type TestHostd } from "./helpers/client";
@@ -46,6 +46,24 @@ test("WebSocket backlog, then append, then a new backlog after the file shrinks"
   truncateSync(file, 0);
   const again = await ws.next("backlog", 3000);
   expect((again.page as PageBody).items).toEqual([]);
+  ws.close();
+});
+
+test("a failed re-read after a shrink keeps the old follower; updates resume on the next change", async () => {
+  const file = s.transcript("chat-basic.jsonl", "live.jsonl");
+  const p = await ompPane(s, "omp", file);
+  const ws = await openWs(h, chatPath(p.id));
+  await ws.next("backlog", 3000);
+  // Shrunk and unreadable in the same instant: the follower sees the shrink, the re-read throws.
+  truncateSync(file, 0);
+  chmodSync(file, 0o000);
+  // Real delay on purpose: the follower polls every 500 ms and nothing is supposed to arrive, so there is no event to await.
+  await Bun.sleep(1200);
+  expect(ws.seen.filter((m) => m.type === "backlog").length).toBe(1);
+  chmodSync(file, 0o644);
+  appendFileSync(file, userLine("u91", "after the failed re-read"));
+  const add = await ws.next("append", 3000);
+  expect((add.items as Item[]).map((i) => i.text)).toEqual(["after the failed re-read"]);
   ws.close();
 });
 

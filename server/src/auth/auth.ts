@@ -32,7 +32,7 @@ export class Auth {
       if (origin === null) return deny("this request needs the control-room Origin");
     }
     const isApi = pathname === "/v1" || pathname.startsWith("/v1/");
-    if (isApi && req.method !== "OPTIONS" && !upgrade && req.headers.get("x-porthole") !== "1") {
+    if (isApi && !upgrade && req.headers.get("x-porthole") !== "1") {
       return deny("missing the X-Porthole: 1 header");
     }
     const local = req.headers.get("x-porthole-local");

@@ -3,7 +3,7 @@ import { ptyFeature } from "../src/features/pty";
 import { cleanEnv } from "../src/exec";
 import { sessionId } from "../src/sessions/ids";
 import { listClients, socketPath } from "../src/sessions/tmux";
-import { openWs, pane, startTestHostd, type TestHostd } from "./helpers/client";
+import { openWs, ompPane, pane, startTestHostd, type TestHostd } from "./helpers/client";
 import { Scratch, waitFor } from "./helpers/scratch";
 
 let s: Scratch;
@@ -98,12 +98,57 @@ test("live voice turning on mid-session drops input from then on", async () => {
   ws.close();
 });
 
-test("unknown live voice (pactl failing) is read-only too", async () => {
-  const p = await pane(s, "work", "cat");
+test("unknown live voice (pactl failing) makes an omp pane read-only", async () => {
+  const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
   s.breakPactl(true);
   const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
   expect((await ws.next("readonly", 3000)).reason).toBe("cannot tell if live voice is on, so typing is off");
   ws.close();
+});
+
+test("unknown live voice (pactl failing) leaves a plain shell pane writable", async () => {
+  const p = await pane(s, "work", "cat");
+  s.breakPactl(true);
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
+  await waitFor(async () => (await listClients(h.config, p.socket)).length === 1);
+  ws.send(enc.encode("plain-typed\r"));
+  await waitFor(() => capture(p.socket, "work").includes("plain-typed"), 5000);
+  expect(ws.seen.some((m) => m.type === "readonly")).toBe(false);
+  ws.close();
+});
+
+test("the first input after an idle gap re-scans live voice instead of trusting the cached tree", async () => {
+  // A scan interval far longer than the test: only a forced fresh scan can see live voice come on.
+  await h.stop();
+  h = await startTestHostd(s, [ptyFeature], { scanIntervalMs: 60_000 });
+  const p = await pane(s, "work", "cat");
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
+  await waitFor(async () => (await listClients(h.config, p.socket)).length === 1);
+  ws.send(enc.encode("first-ok\r"));
+  await waitFor(() => capture(p.socket, "work").includes("first-ok"), 5000);
+  s.setLiveVoicePids([p.pid]);
+  // Real delay on purpose: the idle gap itself (more than 1 s without input) is what is under test.
+  await Bun.sleep(1200);
+  ws.send(enc.encode("after-idle\r"));
+  expect((await ws.next("readonly", 3000)).reason).toBe("live voice is on; typing here would mix with it");
+  await Bun.sleep(300);
+  expect(capture(p.socket, "work")).not.toContain("after-idle");
+  ws.close();
+});
+
+test("a resize after the attach process exited does not block teardown", async () => {
+  const p = await pane(s, "work", "/bin/sh");
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
+  await waitFor(async () => (await listClients(h.config, p.socket)).length === 1);
+  const ours = (await listClients(h.config, p.socket))[0];
+  s.tmux(p.socket, "detach-client", "-t", ours.tty);
+  // Resize frames keep arriving while our attach process exits and its terminal closes.
+  for (let i = 0; i < 40 && ws.ws.readyState === 1; i++) {
+    ws.send(JSON.stringify({ type: "resize", cols: 90 + i, rows: 30 }));
+    await Bun.sleep(5);
+  }
+  expect(await ws.closed).toBe(1000);
+  expect(await listClients(h.config, p.socket)).toEqual([]);
 });
 
 test("herdr is read-only and streams the screen", async () => {

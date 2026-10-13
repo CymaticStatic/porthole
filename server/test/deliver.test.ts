@@ -142,6 +142,32 @@ test("inbox route without a reader stays pending, then reconcile marks it delive
   expect(d.hasPending()).toBe(false);
 });
 
+test("reconcilePending during an in-flight inbox send leaves it pending with the file present", async () => {
+  const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  const dir = inboxDir(cfg.inboxRoot, p.pid);
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, "m-inflight.msg");
+  const sending = d.send(p.id, "m-inflight", "still waiting");
+  await waitFor(() => existsSync(file));
+  expect(d.hasPending()).toBe(true);
+  await d.reconcilePending();
+  expect(d.status("m-inflight")?.status).toBe("pending");
+  expect(existsSync(file)).toBe(true);
+  expect((await sending).status).toBe("pending");
+  expect(existsSync(file)).toBe(true);
+});
+
+test("reconcile with neither file nor part and a dead omp is failed", async () => {
+  const omp = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  const dead = await deadPid();
+  const deadDir = inboxDir(cfg.inboxRoot, dead);
+  mkdirSync(deadDir, { recursive: true });
+  log.append({ clientMsgId: "c-gone-dead", sessionId: omp.id, status: "pending", reason: "", text: "t", route: "inbox", pid: dead, file: path.join(deadDir, "c-gone-dead.msg") });
+  await d.reconcilePending();
+  expect([d.status("c-gone-dead")?.status, d.status("c-gone-dead")?.reason]).toEqual(["failed", "omp exited before reading the message"]);
+  expect(d.hasPending()).toBe(false);
+});
+
 test("omp without an inbox is refused while live voice is on or unknown", async () => {
   const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
   s.setLiveVoicePids([p.pid]);
@@ -152,6 +178,26 @@ test("omp without an inbox is refused while live voice is on or unknown", async 
   s.breakPactl(false);
   const ok = await d.send(p.id, "m-lv-3", "x");
   expect([ok.status, ok.route]).toEqual(["delivered", "tmux"]);
+});
+
+test("a plain shell pane follows the same guard: live voice on refuses, unknown does not (send and keys)", async () => {
+  const p = await pane(s, "work", "cat > /dev/null");
+  s.setLiveVoicePids([p.pid]);
+  const on = await d.send(p.id, "g-1", "x");
+  expect([on.status, on.route, on.reason]).toEqual(["refused", "none", "live voice is on; refusing to type into this pane"]);
+  expect(await d.keys(p.id, [{ key: "Esc" }])).toEqual({ status: "refused", reason: "live voice is on; keys would mix with it" });
+  s.setLiveVoicePids([]);
+  s.breakPactl(true);
+  const unknown = await d.send(p.id, "g-2", "typed while pactl fails");
+  expect([unknown.status, unknown.route]).toEqual(["delivered", "tmux"]);
+  expect((await d.keys(p.id, [{ key: "Esc" }])).status).toBe("sent");
+  await waitFor(() => capture(p.socket, "work").includes("typed while pactl fails"));
+});
+
+test("keys to an omp pane are refused while live voice is unknown", async () => {
+  const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  s.breakPactl(true);
+  expect(await d.keys(p.id, [{ key: "Esc" }])).toEqual({ status: "refused", reason: "cannot tell if live voice is on, so keys are off" });
 });
 
 test("herdr: delivered when idle, refused on a question, failed on a forced failure (P1.3 c)", async () => {
@@ -228,7 +274,7 @@ test("HTTP: hostd start reconciles, checks bodies, and never returns text", asyn
     expect(sent.status).toBe(200);
     const body = (await sent.json()) as Record<string, unknown>;
     expect(body.status).toBe("delivered");
-    expect("text" in body).toBe(false);
+    expect(Object.keys(body).sort()).toEqual(["at", "clientMsgId", "reason", "route", "sessionId", "status"]);
     const got = await fetch(h.url + "/v1/sends/h-ok", { headers: localHeaders(h) });
     expect("text" in ((await got.json()) as object)).toBe(false);
     expect((await fetch(h.url + "/v1/sends/nope", { headers: localHeaders(h) })).status).toBe(404);

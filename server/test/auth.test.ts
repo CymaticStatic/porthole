@@ -65,7 +65,6 @@ test("exact origins, preflight and the local token pass", async () => {
   expect((await auth.check(req("POST", "/v1/sessions/x/send", { ...fromPhone, Origin: CONTROL }))).ok).toBe(true);
   expect((await auth.check(req("POST", "/v1/sessions/x/send", { ...fromPhone, Origin: "https://peer.example.ts.net" }))).ok).toBe(true);
   expect((await auth.check(req("GET", "/v1/events", { ...fromPhone, ...upgrade, "X-Porthole": "", Origin: CONTROL }))).ok).toBe(true);
-  expect((await auth.check(req("OPTIONS", "/v1/sessions/x/send", { ...fromPhone, "X-Porthole": "", Origin: CONTROL }))).ok).toBe(true);
   expect(await auth.check(req("GET", "/v1/machine", { "X-Porthole": "1", "X-Porthole-Local": "local-secret" }))).toEqual({ ok: true, device: "local", via: "local" });
   expect(auth.corsHeaders(req("GET", "/v1/machine", { Origin: CONTROL }))["Access-Control-Allow-Origin"]).toBe(CONTROL);
   expect(auth.corsHeaders(req("GET", "/v1/machine", { Origin: "https://evil.example" }))).toEqual({});

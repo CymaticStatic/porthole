@@ -51,6 +51,31 @@ test("GET /v1/sessions lists the scratch session; unknown path 404; OPTIONS 204 
   expect(opt.headers.get("access-control-allow-origin")).toBe(h.config.origin);
 });
 
+test("OPTIONS needs an exact allowed Origin (else 403) and never reaches a route handler", async () => {
+  let handled = 0;
+  const probe: FeatureFactory = () => ({
+    routes: [{ method: "OPTIONS", pattern: "/v1/probe", handler: () => { handled++; return new Response("handler ran"); } }],
+    channels: [],
+  });
+  const h2 = await startTestHostd(s, [probe]);
+  try {
+    const bad = await fetch(h2.url + "/v1/probe", { method: "OPTIONS", headers: { Origin: "https://evil.example" } });
+    expect(bad.status).toBe(403);
+    expect(bad.headers.get("access-control-allow-origin")).toBeNull();
+    const none = await fetch(h2.url + "/v1/probe", { method: "OPTIONS" });
+    expect(none.status).toBe(403);
+    // Even with the local token and the API header, a preflight is answered by hostd itself.
+    const withToken = await fetch(h2.url + "/v1/probe", { method: "OPTIONS", headers: localHeaders(h2) });
+    expect(withToken.status).toBe(403);
+    const ok = await fetch(h2.url + "/v1/probe", { method: "OPTIONS", headers: { ...localHeaders(h2), Origin: h2.config.origin } });
+    expect(ok.status).toBe(204);
+    expect(await ok.text()).toBe("");
+    expect(handled).toBe(0);
+  } finally {
+    await h2.stop();
+  }
+});
+
 test("events: snapshot on open, update on change, through the hub", async () => {
   const p = await pane(s, "one", "/bin/sh");
   const ws = await openWs(h, "/v1/events");
