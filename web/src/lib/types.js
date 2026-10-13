@@ -9,8 +9,9 @@
 
 /**
  * The Android app's native bridge (`PortholeNative`). What a call resolves to is the app's own JSON (`null` in a plain browser), so
- * the caller narrows it.
- * @typedef {{available: boolean, call(method: string, args?: unknown): Promise<unknown>, on(event: string, fn: (data: unknown) => void): () => void}} Bridge
+ * the caller narrows it. A `share` event with no listener yet is kept (up to 10) and handed to the first `share` listener;
+ * `pendingShares()` says how many wait and `onShareQueued(fn)` calls `fn` each time one more starts waiting.
+ * @typedef {{available: boolean, call(method: string, args?: unknown): Promise<unknown>, on(event: string, fn: (data: unknown) => void): () => void, pendingShares(): number, onShareQueued(fn: () => void): () => void}} Bridge
  */
 
 /** The app event bus (`ctx.events`). @typedef {{on(name: string, fn: (data: unknown) => void): () => void, emit(name: string, data: unknown): void}} Events */

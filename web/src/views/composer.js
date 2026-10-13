@@ -418,13 +418,6 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     for (const f of images) void upload(f, f.name || `pasted-${Date.now()}.${f.type.slice(6) || "png"}`);
   });
 
-  const offShare = ctx.bridge?.available
-    ? ctx.bridge.on("share", (data) => {
-        const path = asObject(data).path;
-        if (typeof path === "string") insertPath(path);
-      })
-    : () => {};
-
   // ---- menu, sheet, talk --------------------------------------------------------------------------------------------------------
   function openMenu() {
     menu.hidden = false;
@@ -508,6 +501,14 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
   }
   renderChips();
   updateControls();
+  // After the draft is back: a share that arrived before this chat opened is delivered the moment we listen (the bridge kept it),
+  // and it must land in the restored text, not be overwritten by it.
+  const offShare = ctx.bridge?.available
+    ? ctx.bridge.on("share", (data) => {
+        const path = asObject(data).path;
+        if (typeof path === "string") insertPath(path);
+      })
+    : () => {};
   const waiting = outbox.all().find((e) => e.origin === origin && e.sessionId === sessionId);
   if (waiting) {
     lastSent = { id: waiting.clientMsgId, text: waiting.text };

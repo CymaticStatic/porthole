@@ -223,6 +223,8 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
     currentHref = hrefStr;
     route = r;
     updateTitle();
+    if (r.view === "inbox") maybeChooseChat();
+    else closeChooser();
     if ((r.view === "chat" || r.view === "term") && r.machine && r.sessionId) openList.touch({ machine: r.machine, sessionId: r.sessionId, view: r.view });
     const previous = current;
     current = null;
@@ -267,6 +269,64 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
     if (noticeTimer !== null) clearT(noticeTimer);
     noticeTimer = setT(() => { notice.hidden = true; noticeTimer = null; }, NOTICE_MS);
   }
+
+  // ---- "Choose a chat for this file" ----
+  // A file shared to the app waits in the bridge until a chat's message box listens for it. When the app is on the Inbox (no chat
+  // open) the person is asked which chat should get it; picking one opens it, and its message box takes the file when it mounts.
+  /** @type {{el: HTMLElement, list: HTMLElement, off: () => void} | null} */
+  let chooser = null;
+  let chooserDismissed = false;
+
+  function chatRows() {
+    return fleet.sidebar(openList.get()).chats.flatMap((g) => g.rows);
+  }
+
+  function renderChooserList() {
+    if (!chooser) return;
+    const rows = chatRows();
+    chooser.list.replaceChildren(...(rows.length === 0
+      ? [h("p", { class: "meta side-empty", "data-test": "share-empty" }, copy.emptyChats)]
+      : rows.map((r) => h("button", {
+          type: "button", class: "row share-row", "data-test": "share-chat", "data-label": r.name, "data-machine": r.machine, "data-id": r.id,
+          on: { click: () => { closeChooser(); navigate({ view: "chat", machine: r.machine, sessionId: r.id }); } },
+        },
+        h("span", { class: "row-name" }, r.name),
+        h("span", { class: "row-state" }, `${r.project} · ${r.machine}`),
+      ))));
+  }
+
+  function closeChooser() {
+    if (!chooser) return;
+    chooser.off();
+    chooser.el.remove();
+    chooser = null;
+    applyDrawer();
+  }
+
+  function maybeChooseChat() {
+    if (chooser || chooserDismissed || route.view !== "inbox" || !base.bridge.available || base.bridge.pendingShares() === 0) return;
+    const list = h("div", { class: "share-list", "data-test": "share-list" });
+    const notNow = h("button", { type: "button", class: "btn share-dismiss", "data-test": "share-dismiss", on: { click: () => { chooserDismissed = true; closeChooser(); } } }, copy.shareNotNow);
+    const el = h("div", { class: "share-overlay", "data-test": "share-picker" },
+      h("div", { class: "share-sheet", role: "dialog", "aria-modal": "true", "aria-labelledby": "share-title" },
+        h("h2", { id: "share-title", class: "share-title" }, copy.shareChooseChat),
+        h("p", { class: "meta" }, copy.shareChooseChatHint),
+        list,
+        notNow,
+      ),
+    );
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); chooserDismissed = true; closeChooser(); }
+    });
+    chooser = { el, list, off: fleet.subscribe(renderChooserList) };
+    renderChooserList();
+    shell.append(el);
+    page.inert = true;
+    drawer.inert = true;
+    (list.querySelector("button") ?? notNow).focus();
+  }
+
+  const offShareQueued = base.bridge.onShareQueued(() => { chooserDismissed = false; maybeChooseChat(); });
 
   /** Reads the address and shows its screen (once per distinct route). */
   function sync() {
@@ -333,6 +393,8 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
       doc.removeEventListener("touchstart", onTouchStart);
       doc.removeEventListener("touchmove", onTouchMove);
       doc.removeEventListener("touchend", onTouchEnd);
+      offShareQueued();
+      closeChooser();
       strip.destroy();
       chromeObserver?.disconnect();
       sidebar.destroy();
