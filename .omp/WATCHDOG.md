@@ -15,4 +15,15 @@
   (Space mutes, Esc ends live). Use the live inbox for text; disable the key row in live mode.
 - omp inbox folders exist only for omp sessions started after `live-inbox.ts` was installed.
 - `tmux attach` from Porthole resizes the session for every viewer; detach only Porthole's client.
-- The omp extension dependency rewriter has rejected template literals: none in `live-inbox.ts`.
+- The omp extension dependency rewriter has rejected template literals: none in `live-inbox.ts` or
+  `porthole-events.ts`.
+- Esc ends omp live voice. Inbox answers, notification buttons, the watch and shortcuts all send
+  keys, so hostd must refuse keys for live-voice panes itself (SPEC 4.3), not rely on the screen.
+- Preview pages (port 8443) are same-site with the control room (port 443): cookies and SameSite do
+  not separate them. Only the exact-Origin check and the X-Porthole header do (SPEC 5.4).
+- `tailscale serve` forwards to 127.0.0.1, so identity headers can be faked by local programs unless
+  hostd listens on a Unix socket (SPEC 5.4).
+- `git status` takes index.lock and repo config can run programs: always use GIT_OPTIONAL_LOCKS=0 and
+  the flags in SPEC 4.9.
+- `voxtype transcribe` may load a second Whisper model onto the graphics card and crash voxtype's
+  daemon (SPEC 4.12): one transcription at a time, VRAM checked first.

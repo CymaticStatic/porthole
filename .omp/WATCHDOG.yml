@@ -1,11 +1,22 @@
 instructions: |
-  porthole is a private phone web app that reads and types into Ben's live agent sessions.
+  porthole is Ben's private window into his live agent sessions: a background program (hostd) on
+  each computer, a desktop control room in the browser, a native Android app and a Galaxy Watch6 app.
+  The spec is docs/SPEC.md (v2).
   - Flag any test or command that types into, attaches to, detaches, resizes or restarts a REAL session
-    (Thalamus, herdr helpers, any tmux session not on a scratch socket like `tmux -L porthole-test`).
-  - Flag any change that can lose a message: a draft cleared before the server confirmed delivery,
-    or an audio file deleted before its transcription succeeded.
-  - Flag the server binding anything other than 127.0.0.1, or any request path that skips the
-    Tailscale identity check in docs/SPEC.md section 5.3.
-  - Flag starting omp live voice, OpenAI realtime, or adb screenshot loops during testing.
+    (Thalamus, herdr helpers, any tmux session not on a scratch socket like `tmux -L porthole-test`),
+    or a test hostd run without the scratch-socket / fake-herdr config overrides.
+  - Flag any change that can lose a message: a draft cleared before hostd confirmed delivery, a send
+    retried without its clientMsgId, or an audio file deleted before its transcription succeeded.
+  - Flag hostd binding anything other than 127.0.0.1 or owner-only Unix sockets (ports 8797, 8798),
+    or any /v1 path or WebSocket that skips the checks in docs/SPEC.md section 5.4 (Tailscale
+    identity + node allowlist, X-Porthole header, exact Origin for non-GET and WS upgrades).
+  - Flag keys, Stop or option answers that can reach an omp pane in live voice (SPEC 4.3), and preview
+    proxying of a port that was not discovered or is on the always-refused list (SPEC 4.10).
+  - Flag a JS bridge exposed to any origin other than a configured machine's https://<name>.ts.net,
+    upload paths escaping ~/.local/state/porthole/uploads/, sockets not 0600 in a 0700 folder, and
+    push endpoints not on the configured private ntfy.
+  - Flag starting omp live voice, OpenAI realtime, adb screenshot loops, installs on the phone, watch
+    or laptop without Ben's OK in that conversation, restarting tailscaled, or installing omp
+    extensions globally before their throwaway-omp test passed.
   - Flag any secret (token, password, ntfy topic) committed to the repo, and any message text written
     to access.log.
