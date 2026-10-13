@@ -1,0 +1,9 @@
+{"type":"title","v":1,"title":"Chat fixture","source":"auto","updatedAt":"2026-10-13T09:00:00.000Z","pad":"        "}
+{"type":"session","version":3,"id":"fx-chat","timestamp":"2026-10-13T09:00:00.000Z","cwd":"/tmp/fixture"}
+{"type":"message","id":"u1","parentId":null,"timestamp":"2026-10-13T09:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"List the files"}]}}
+{"type":"message","id":"a1","parentId":"u1","timestamp":"2026-10-13T09:00:02.000Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hidden"},{"type":"text","text":"Looking now."},{"type":"toolCall","id":"c1","name":"read","arguments":{"path":"."},"intent":"Listing"},{"type":"toolCall","id":"c2","name":"grep","arguments":{"pattern":"x"},"intent":"Searching"}],"stopReason":"toolUse"}}
+{"type":"message","id":"r1","parentId":"a1","timestamp":"2026-10-13T09:00:03.000Z","message":{"role":"toolResult","content":[{"type":"text","text":"a.txt"}]}}
+{"type":"message","id":"a2","parentId":"r1","timestamp":"2026-10-13T09:00:04.000Z","message":{"role":"assistant","content":[{"type":"text","text":"There is **one** file: `a.txt`."}],"stopReason":"stop"}}
+{"type":"custom_message","customType":"live-delegation","content":"Also check the tests","display":true,"attribution":"agent","id":"d1","parentId":"a2","timestamp":"2026-10-13T09:00:05.000Z"}
+{"type":"message","id":"x1","parentId":"d1","timestamp":"2026-10-13T09:00:06.000Z","message":{"role":"developer","content":[{"type":"text","text":"system reminder"}]}}
+{"type":"custom","customType":"cymatic.session-status","data":{"schema":"cymatic.session-status/v2","status":"in-progress","questionCount":0,"questions":[],"recordedAt":"2026-10-13T09:00:06.500Z","source":{"entryId":"d1","trigger":"turn-start"}},"id":"s1","parentId":"d1","timestamp":"2026-10-13T09:00:06.500Z"}
