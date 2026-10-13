@@ -4,7 +4,7 @@
 
 **Goal:** Build `porthole-hostd` phase P1 on the desktop: session discovery with status, chat stream, screen, send (live inbox / tmux / herdr, exactly once), keys, PTY, auth, access log, systemd unit, `tailscale serve`, and `live-inbox.ts` moved into this repo and installed, exactly as `docs/SPEC.md` section 8 P1 items 1-6 define.
 
-**Architecture:** One Bun process (`server/src/main.ts`) bound to 127.0.0.1:8797. Each spec module (5.1) is its own folder or file and exports a `Feature` (a list of routes); `server/src/http/app.ts` runs auth and the access log in front of every route, and `main.ts` composes the features. P2 modules (`events` socket, `push`, `uploads`, `diff`, `preview`, `usage`, `voice`, `shortcuts`, `doctor`) are added later as new files plus one line each in `main.ts`; no P1 file moves. Every test runs an in-process hostd whose config points at a scratch tmux socket folder, fake `herdr` / `pactl` / `tailscale` programs and fixture transcripts.
+**Architecture:** One Bun process (`server/src/main.ts`) bound to 127.0.0.1:8797. Each spec module (5.1) is its own file under `server/src/features/` and exports a `FeatureFactory` (routes, channels, optional start/stop); `server/src/hostd.ts` (`createHostd`) runs auth and the access log in front of every route and channel, and `main.ts` composes the features. P2 modules (`events` socket, `push`, `uploads`, `diff`, `preview`, `usage`, `voice`, `shortcuts`, `doctor`) are added later as new files plus one entry each in `main.ts`; no P1 file moves. Every test runs an in-process hostd whose config points at a scratch tmux socket folder, fake `herdr` / `pactl` / `tailscale` programs and fixture transcripts.
 
 **Tech Stack:** TypeScript on Bun 1.4.2 (no npm dependencies; Bun runs `.ts` directly), `bun test`, tmux 3.7c, herdr 0.9.1 CLI, pactl 17.0, tailscale 1.102.4, systemd user units.
 
@@ -41,7 +41,7 @@ Established read-only on 2026-10-13 by the planning agent before writing this pl
 1. **`tailscale serve` can forward to a Unix socket.** `tailscale version` → `1.102.4`. `tailscale serve --help` line 15: `On Unix-like systems, you can also specify a Unix domain socket (e.g., unix:/tmp/myservice.sock).`, example line 28: `$ tailscale serve unix:/var/run/myservice.sock`. Flags present: `--bg`, `--https value`, `--set-path value`, `--tcp value`, `--tls-terminated-tcp value`, `--yes`; subcommands `status [--json]`, `reset`.
 2. **Current serve config is empty.** `tailscale serve status` → `No serve config`; `tailscale serve status --json` → `{}`. `tailscale debug prefs` shows `"OperatorUser": "cymatic"`, so `tailscale serve --bg` should not need sudo ([INFERENCE]; Task 12 stops and hands Ben the command if it does).
 3. **Machine names.** `tailscale whois --json 100.78.36.107` → `.Node.Name` `bendesk-omarchy.tailafe04c.ts.net.`, `.UserProfile.LoginName` `bengovernale@gmail.com`. `tailscale status --json` peers: `bencell.tailafe04c.ts.net.` (HostName `Pixel 7 Pro`, 100.120.182.107), `benacer-omarchy.tailafe04c.ts.net.` (100.124.43.2), and a **different** Windows node `benacer.tailafe04c.ts.net.` (HostName `LAPTOP-ILGLMDAS`, 100.121.87.19). The node allowlist therefore compares the exact first DNS label.
-4. **Identity headers.** A string search of the `tailscaled` binary (earlier in this session) found `Tailscale-User-Login`, `Tailscale-User-Name`, `Tailscale-User-Profile-Pic`, `Tailscale-App-Capabilities`, `Tailscale-Headers-Info` and `X-Forwarded-For`, and **no node-name header**. So hostd takes the device address from `X-Forwarded-For` and asks `tailscale whois --json <ip>` for the node. **Could not verify** (needs Porthole's own serve entry, which only Task 12 adds): that `tailscale serve` really sets these headers on requests from this machine itself, and whether a client-supplied `X-Forwarded-For` is kept in front of the real address. hostd uses the **last** `X-Forwarded-For` entry, and Task 12 Step 6 checks both points through the real serve entry.
+4. **Identity headers.** A string search of the `tailscaled` binary (earlier in this session) found `Tailscale-User-Login`, `Tailscale-User-Name`, `Tailscale-User-Profile-Pic`, `Tailscale-App-Capabilities`, `Tailscale-Headers-Info` and `X-Forwarded-For`, and **no node-name header**. So hostd takes the device address from `X-Forwarded-For` and asks `tailscale whois --json <ip>` for the node. **Could not verify** (needs Porthole's own serve entry, which only Task 12 adds): that `tailscale serve` really sets these headers on requests from this machine itself, and whether a client-supplied `X-Forwarded-For` is kept in front of the real address. hostd uses the **last** `X-Forwarded-For` entry, and Task 12 live step L3 checks both points through the real serve entry (and switches on `singleForwardedFor` when serve writes a single entry).
 5. **Bun.** `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun --version` → `1.4.2`. Probe `scratch/probe-unix.ts`: `Bun.serve({ unix })` answers (`fetch` status 200), `server.requestIP(req)` is `null` on a Unix socket, the socket file is created mode 755, and no API exposes the peer's uid. Probes `scratch/probe-peercred-ffi.ts` / `probe-peercred-ffi2.ts`: only a raw `Bun.listen` socket exposes an undocumented `fd`, where `bun:ffi` `getsockopt(fd, SOL_SOCKET=1, SO_PEERCRED=17)` returned uid 1000; `Bun.serve` and `node:http` give no fd. **Result: SO_PEERCRED is not available for the HTTP server, so hostd runs in 127.0.0.1 mode** (SPEC 5.4 fallback, decision 10.13) and the README states the limit.
 6. **Bun PTY works.** Probe `scratch/probe-pty.ts` against `tmux -L porthole-plancheck` (tmux 3.7c, server started with `new-session -d -s probe -x 120 -y 40 /bin/sh`, then `tmux -L porthole-plancheck kill-server`): `typeof Bun.Terminal` → `function`; `Bun.spawn([tmux,"-L","porthole-plancheck","attach","-t","=probe"], { terminal: { cols, rows, data(term, chunk) } })` gave `proc.terminal` with `write`/`resize`/`close`. Output: `clients while attached: "2751060 /dev/pts/52 90x25\n2751068 /dev/pts/53 100x30"`, `write returned: 21`, `pane shows typed text: true`, `pane text: "sh-5.3$ echo porthole-pty-ok|porthole-pty-ok|sh-5.3$"`, `after resize: "2751060 90x25\n2751068 80x24"`, `our client line: "2751068 /dev/pts/53"`, after `detach-client -t /dev/pts/53`: `child exit code: 0`, `clients after: "2751060 /dev/pts/52"` (the other client stayed). The tmux client pid equals the spawned child's pid. Two earlier runs reported `pane shows typed text: false` because they captured with target `=probe` after 800 ms; the target `=probe:0.0` works. Prior art for comparison: mission-control slice 1 uses Rust `portable-pty` 0.9 with `@xterm/xterm` 6.0 and `@xterm/addon-fit` 0.11, binary WebSocket frames for raw bytes both ways and text frames `{"type":"resize","cols","rows"}`; `skill://embed-omp-pty-terminal-in-local-app` uses a Python PTY. P1 keeps the same wire protocol with `Bun.spawn({ terminal })`.
 7. **tmux details.** `which tmux` → `/usr/bin/tmux`, `tmux -V` → `tmux 3.7c`. `TMUX_TMPDIR=<dir> tmux -L porthole-test-1 new-session -d -s s1 /bin/sh` creates `<dir>/tmux-1000/porthole-test-1`; `tmux -S <dir>/tmux-1000/porthole-test-1 list-sessions` sees it. After `kill-server` the socket file **stays**, and listing it prints `no server running on <path>` with exit 1. `list-panes -a -F` with `\x1f` separators prints the separator raw (od: `m y   s 037 0 037 0 037 342 240 213 ...`), and a pane title keeps omp's Braille spinner (`⠋ omp: title`). The default `pane_title` is the hostname (`bendesk-omarchy`). `send-keys -t '=s:0.0' -l -- '-v dash-ok'` typed the text (the `--` stops `-v` being read as a flag). Ben's real socket folder `/tmp/tmux-1000` held `default` and a Thalamus test socket on 2026-10-13: tests must never create sockets there, so the harness sets `TMUX_TMPDIR` to its scratch folder.
@@ -77,25 +77,25 @@ server/src/sessions/procs.ts        /proc: omp pid in a pane, its transcript, it
 server/src/sessions/livevoice.ts    pactl source-outputs → live-voice omp pids (Task 3)
 server/src/sessions/status.ts       transcript status entry and herdr state → session status (Task 3)
 server/src/sessions/registry.ts     scan → SessionTree, change listeners (Task 8)
-server/src/sessions/routes.ts       GET /v1/sessions, WS /v1/events (Task 8)
 server/src/transcript/parse.ts      transcript line → chat items (Task 4)
 server/src/transcript/tail.ts       byte-offset pages and a follower (Task 4)
-server/src/transcript/routes.ts     GET + WS /v1/sessions/:id/chat (Task 9)
-server/src/auth/auth.ts             X-Porthole, exact Origin, CORS, identity, local token (Task 5)
+server/src/auth/auth.ts             X-Porthole, exact Origin, CORS, identity, local token, X-Forwarded-For rule (Task 5)
 server/src/auth/identity.ts         tailscale whois node lookup with cache (Task 5)
 server/src/auth/localtoken.ts       $XDG_RUNTIME_DIR/porthole/local-token (Task 5)
 server/src/auth/accesslog.ts        ~/.local/state/porthole/access.log (Task 5)
 server/src/deliver/sentlog.ts       sent.jsonl record per clientMsgId (Task 6)
 server/src/deliver/inbox.ts         write-then-rename into a live inbox, wait until taken (Task 6)
-server/src/deliver/deliver.ts       Deliverer: inbox / tmux / herdr, exactly once (Task 10)
-server/src/deliver/routes.ts        POST send, GET sends, POST keys (Task 10)
-server/src/keys.ts                  key-step grammar (4.4) and key sending with live-voice refusal (Task 10)
-server/src/screen.ts                GET /v1/sessions/:id/screen (Task 9)
-server/src/pty.ts                   WS /v1/sessions/:id/pty (Task 11)
+server/src/deliver/deliver.ts       Deliverer: inbox / tmux / herdr, exactly once, pending reconcile (Task 10)
+server/src/deliver/keys.ts          key-step grammar (SPEC 4.4) and key names per route (Task 10)
+server/src/router.ts                Route / Channel / Feature / FeatureDeps / FeatureFactory types, matcher, json() (Task 8)
+server/src/hostd.ts                 createHostd: Bun.serve, auth → route → access log, WebSocket dispatch, feature start/stop (Task 8)
+server/src/version.ts               VERSION (Task 8)
 server/src/events/hub.ts            /v1/events client set and broadcast (Task 8)
-server/src/machine.ts               GET /v1/machine (Task 8)
-server/src/http/router.ts           Route/Feature/Channel types, matcher, json() (Task 8)
-server/src/http/app.ts              Bun.serve: auth → route → access log; WebSocket dispatch (Task 8)
+server/src/features/machine.ts      GET /v1/machine (Task 8)
+server/src/features/sessions.ts     GET /v1/sessions, WS /v1/events (Task 8)
+server/src/features/chat.ts         GET + WS /v1/sessions/:id/chat, GET /v1/sessions/:id/screen (Task 9)
+server/src/features/send.ts         POST send, GET sends, POST keys; reconcile timer (Task 10)
+server/src/features/pty.ts          WS /v1/sessions/:id/pty (Task 11)
 server/src/main.ts                  config, compose features, start, signals; `init-config` (Task 12)
 server/test/helpers/scratch.ts      Scratch: scratch tmux servers, fakes, fixtures, cleanup (Task 1)
 server/test/helpers/client.ts       in-process test hostd, local headers, raw upgrade (Task 8)
@@ -104,12 +104,14 @@ server/test/fakes/pactl.ts          fake pactl (Task 1)
 server/test/fakes/tailscale.ts      fake tailscale whois/status (Task 1)
 server/test/fixtures/status-needs-you.jsonl, status-working.jsonl, status-done.jsonl (Task 3)
 server/test/fixtures/chat-basic.jsonl (Task 4)
-server/test/*.test.ts               one file per task (named in each task)
+server/test/*.test.ts               the test files named in each task's Files list
 server/test/live/live-inbox-once.ts the single throwaway omp run (Task 10)
 server/test/live/auth-live.ts       P1.5 checks against the installed hostd (Task 12)
 ```
 
-Where P2 slots in without moving P1 files: `server/src/events/socket.ts` + `events/inbox.ts` (extension socket, inbox state; `hub.ts` gains `notify`/`ack`), `server/src/push.ts`, `uploads.ts`, `diff.ts` (adds `dirty` to `SessionInfo` in `registry.ts`), `preview.ts` (second listener on 8798), `usage.ts`, `voice.ts`, `shortcuts.ts` (uses `parseSteps` from `keys.ts`), `doctor.ts`, `omp-extension/porthole-events.ts`; each new feature is one more entry in `main.ts`.
+This list and the per-task **Files (owned)** lists name the same files; the task lists are the authority.
+
+Where P2 slots in without moving P1 files: `server/src/events/socket.ts` + `server/src/events/inbox.ts` (extension socket, inbox state; `events/hub.ts` gains `notify`/`ack`), and new features `server/src/features/push.ts`, `uploads.ts`, `diff.ts` (adds `dirty` to `SessionInfo` in `sessions/registry.ts`), `preview.ts` (second listener on 8798), `usage.ts`, `voice.ts`, `shortcuts.ts` (uses `parseSteps` from `deliver/keys.ts`), `doctor.ts`, plus `omp-extension/porthole-events.ts`; each new feature is one more `FeatureFactory` in `main.ts`'s list.
 
 ## Parallel groups and file ownership
 
@@ -117,7 +119,7 @@ Where P2 slots in without moving P1 files: `server/src/events/socket.ts` + `even
 |---|---|---|
 | G0 | Task 1 | nothing |
 | G1 | Tasks 2, 3, 4, 5, 6, 7 | Task 1 |
-| G2 | Task 8 | Tasks 2, 3, 5 |
+| G2 | Task 8 | Tasks 2, 3, 5, 6 |
 | G3 | Tasks 9, 10, 11 | Task 8; Task 9 also Task 4; Task 10 also Tasks 6 and 7 |
 | G4 | Task 12 | all |
 
@@ -138,7 +140,7 @@ Each task lists the only files it may create or change. No file appears in two t
 - Consumes: nothing.
 - Produces:
   - `json.ts`: `asRecord(v: unknown): Record<string, unknown>`, `asString(v: unknown): string`, `asArray(v: unknown): unknown[]`.
-  - `config.ts`: `interface Binaries { tmux; herdr; pactl; tailscale: string }`; `interface HostdConfig { machineName: string; origin: string; peers: string[]; host: "127.0.0.1"; apiPort: number; tmuxSocketDir: string; bin: Binaries; transcriptDirs: string[]; inboxRoot: string; runtimeDir: string; stateDir: string; allowedLogin: string; allowedNodes: string[]; thalamusDir: string; pendingAfterMs: number; scanIntervalMs: number }`; `type ConfigOverrides = Omit<Partial<HostdConfig>, "bin"> & { bin?: Partial<Binaries> }`; `defaultConfig(): HostdConfig`; `validateConfig(c: HostdConfig): string[]`; `loadConfig(file: string | null, overrides?: ConfigOverrides): HostdConfig` (throws on problems); `selfFromTailscale(bin: string): Promise<{ machineName: string; origin: string }>`; `writeInitialConfig(file: string, tailscaleBin: string): Promise<string>`.
+  - `config.ts`: `interface Binaries { tmux; herdr; pactl; tailscale: string }`; `interface HostdConfig { machineName: string; origin: string; peers: string[]; host: "127.0.0.1"; apiPort: number; tmuxSocketDir: string; bin: Binaries; transcriptDirs: string[]; inboxRoot: string; runtimeDir: string; stateDir: string; allowedLogin: string; allowedNodes: string[]; thalamusDir: string; pendingAfterMs: number; scanIntervalMs: number; singleForwardedFor: boolean }`; `type ConfigOverrides = Omit<Partial<HostdConfig>, "bin"> & { bin?: Partial<Binaries> }`; `defaultConfig(): HostdConfig`; `validateConfig(c: HostdConfig): string[]`; `loadConfig(file: string | null, overrides?: ConfigOverrides): HostdConfig` (throws on problems); `selfFromTailscale(bin: string): Promise<{ machineName: string; origin: string }>`; `writeInitialConfig(file: string, tailscaleBin: string): Promise<string>`.
   - `exec.ts`: `interface RunResult { code: number; stdout: string; stderr: string; timedOut: boolean }`; `run(argv: string[], opts?: { timeoutMs?: number; env?: Record<string, string>; input?: string }): Promise<RunResult>` (`input` is written to the program's stdin; missing binary → code 127, never throws); `cleanEnv(extra?: Record<string, string>): Record<string, string>` (process env without `TMUX`, `TMUX_PANE`).
   - `scratch.ts`: `class Scratch` with fields `root, tmuxTmp, socketDir, fakeBin, transcripts, inboxRoot, runtimeDir, stateDir, thalamusDir` and methods `config(o?: ConfigOverrides): HostdConfig`, `newTmuxServer(session: string, command?: string, cwd?: string): string` (returns socket name `porthole-test-<n>`), `tmux(socket: string, ...args: string[]): string`, `transcript(fixture: string, name?: string): string`, `writeTranscript(name: string, text: string): string`, `ompCommand(transcriptPath: string): string`, `panePid(socket: string, target: string): number`, `setHerdrAgents(a: HerdrAgentFixture[]): void`, `setHerdrScreen(paneId: string, text: string): void`, `failHerdrPrompt(on: boolean): void`, `setLiveVoicePids(pids: number[]): void`, `breakPactl(on: boolean): void`, `setWhois(map: Record<string, { node: string; login: string }>): void`, `fakeCalls(name: "herdr" | "pactl" | "tailscale"): string[][]`, `fakeFile(name: string): string`, `cleanup(): void`; `waitFor(check: () => boolean | Promise<boolean>, timeoutMs?: number, stepMs?: number): Promise<void>`; `FIXTURES: string`; `interface HerdrAgentFixture`.
   - Fake programs (sh wrappers written by `Scratch` into `fakeBin`, each `exec`s Bun on the `.ts` file with `FAKE_DIR=<fakeBin>`): `herdr agent list|read|prompt|send-keys`, `pactl -f json list source-outputs`, `tailscale whois --json <ip>` / `status --json`. Each appends its argv as one JSON line to `<fakeBin>/<name>-calls.log`.
@@ -167,6 +169,7 @@ test("defaults match the spec", () => {
   expect(c.allowedLogin).toBe("bengovernale@gmail.com");
   expect(c.allowedNodes).toEqual(["bencell", "benacer-omarchy", "bendesk-omarchy"]);
   expect(c.pendingAfterMs).toBe(30_000);
+  expect(c.singleForwardedFor).toBe(false);
   expect(c.stateDir.endsWith("/.local/state/porthole")).toBe(true);
 });
 
@@ -376,6 +379,7 @@ export interface HostdConfig {
   thalamusDir: string;
   pendingAfterMs: number;   // SPEC 4.5: 30 s, then `pending`
   scanIntervalMs: number;
+  singleForwardedFor: boolean; // false until Task 12 L3 proves `tailscale serve` writes one X-Forwarded-For entry
 }
 
 export type ConfigOverrides = Omit<Partial<HostdConfig>, "bin"> & { bin?: Partial<Binaries> };
@@ -404,6 +408,7 @@ export function defaultConfig(): HostdConfig {
     thalamusDir: "/home/cortex/00-system/thalamus",
     pendingAfterMs: 30_000,
     scanIntervalMs: 2_000,
+    singleForwardedFor: false,
   };
 }
 
@@ -422,6 +427,7 @@ export function validateConfig(c: HostdConfig): string[] {
     if (!path.isAbsolute(c[key])) problems.push(key + " must be an absolute path");
   }
   if (!c.allowedLogin.includes("@")) problems.push("allowedLogin must be a Tailscale login");
+  if (typeof c.singleForwardedFor !== "boolean") problems.push("singleForwardedFor must be true or false");
   return problems;
 }
 
@@ -808,7 +814,7 @@ test("lists every socket and pane; a stopped server is reported, not thrown", as
   expect(!pb.ok && pb.error).toContain("no server running");
 });
 
-test("sendText pastes multi-line text once and presses Enter; capture shows the pane", async () => {
+test("sendText types multi-line text literally and presses Enter once; capture shows the pane", async () => {
   const out = path.join(s.root, "typed.txt");
   const sock = s.newTmuxServer("cat", "/bin/sh -c 'cat > " + out + "'");
   const w = { kind: "tmux" as const, socket: sock, session: "cat", window: 0, pane: 0 };
@@ -818,6 +824,15 @@ test("sendText pastes multi-line text once and presses Enter; capture shows the 
   const cap = await capturePane(s.config(), w);
   expect(cap.ok).toBe(true);
   expect(cap.text).toContain("world");
+});
+
+test("sendText splits long text into several send-keys calls without losing a byte", async () => {
+  const out = path.join(s.root, "long.txt");
+  const sock = s.newTmuxServer("cat", "/bin/sh -c 'cat > " + out + "'");
+  const w = { kind: "tmux" as const, socket: sock, session: "cat", window: 0, pane: 0 };
+  const text = Array.from({ length: 1500 }, (_, i) => "line " + i + " é").join("\n");
+  expect(await sendText(s.config(), w, text)).toEqual({ ok: true, error: "" });
+  await waitFor(() => existsSync(out) && readFileSync(out, "utf8") === text + "\n", 15_000);
 });
 
 test("sendKeys passes a literal that starts with a dash", async () => {
@@ -934,13 +949,33 @@ export async function capturePane(cfg: HostdConfig, w: TmuxWhere): Promise<{ ok:
   return r.code === 0 ? { ok: true, text: r.stdout, error: "" } : { ok: false, text: "", error: failure(r) };
 }
 
-/** Paste the text as one bracketed paste (newlines stay inside the message), then press Enter. */
+const SEND_CHUNK_BYTES = 8192;
+
+/** Split text into pieces of at most `max` UTF-8 bytes, never inside a character. */
+function chunks(text: string, max: number): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let size = 0;
+  for (const ch of text) {
+    const n = Buffer.byteLength(ch);
+    if (size + n > max && cur) {
+      out.push(cur);
+      cur = "";
+      size = 0;
+    }
+    cur += ch;
+    size += n;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/** SPEC 4.5: type the text literally (`send-keys -l`, in chunks of at most 8 KiB), then press Enter once. */
 export async function sendText(cfg: HostdConfig, w: TmuxWhere, text: string): Promise<{ ok: boolean; error: string }> {
-  const buffer = "porthole-" + crypto.randomUUID();
-  const load = await tmux(cfg, w.socket, ["load-buffer", "-b", buffer, "-"], text);
-  if (load.code !== 0) return { ok: false, error: failure(load) };
-  const paste = await tmux(cfg, w.socket, ["paste-buffer", "-p", "-d", "-b", buffer, "-t", tmuxTarget(w)]);
-  if (paste.code !== 0) return { ok: false, error: failure(paste) };
+  for (const piece of chunks(text, SEND_CHUNK_BYTES)) {
+    const typed = await tmux(cfg, w.socket, ["send-keys", "-l", "-t", tmuxTarget(w), "--", piece]);
+    if (typed.code !== 0) return { ok: false, error: failure(typed) };
+  }
   const enter = await tmux(cfg, w.socket, ["send-keys", "-t", tmuxTarget(w), "Enter"]);
   return enter.code === 0 ? { ok: true, error: "" } : { ok: false, error: failure(enter) };
 }
@@ -1026,7 +1061,7 @@ export async function sendKeys(cfg: HostdConfig, pane: string, keys: string[]): 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/sources.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1670,7 +1705,7 @@ git push
   - `accesslog.ts`: `interface AccessEntry { device: string; method: string; route: string; session: string; status: number; reason: string }`, `class AccessLog { readonly file: string; constructor(stateDir: string); write(e: AccessEntry): void }`.
   - `auth.ts`: `type Verdict = { ok: true; device: string; via: "tailscale" | "local" } | { ok: false; reason: string }`, `class Auth { constructor(cfg: HostdConfig, whois: Whois, localToken: string); check(req: Request): Promise<Verdict>; corsHeaders(req: Request): Record<string, string> }`.
 
-Rules (SPEC 5.4, in this order): (1) an `Origin` that is present but not exactly `cfg.origin` or one of `cfg.peers` → 403; (2) every non-GET/HEAD request and every WebSocket upgrade needs such an exact `Origin`; (3) every `/v1` HTTP request except `OPTIONS` and upgrades needs `X-Porthole: 1`; (4) `X-Porthole-Local` equal to the token (constant-time compare) → device `local`; (5) otherwise `Tailscale-User-Login` must equal `allowedLogin`, and the **last** `X-Forwarded-For` address must resolve through `tailscale whois --json` to a node in `allowedNodes` owned by `allowedLogin`. 127.0.0.1 mode only (Verified facts 5): no Unix-socket branch is built, so there is nothing to unit-test for it; the README states the limit (Task 12).
+Rules (SPEC 5.4, in this order): (1) an `Origin` that is present but not exactly `cfg.origin` or one of `cfg.peers` → 403; (2) every non-GET/HEAD request and every WebSocket upgrade needs such an exact `Origin`; (3) every `/v1` HTTP request except `OPTIONS` and upgrades needs `X-Porthole: 1`; (4) `X-Porthole-Local` equal to the token (constant-time compare) → device `local`; (5) otherwise `Tailscale-User-Login` must equal `allowedLogin`; when `cfg.singleForwardedFor` is true, a request with more than one `X-Forwarded-For` entry → 403 `"more than one X-Forwarded-For entry"` (switched on by the orchestrator only after Task 12's live check shows `tailscale serve` writes a single entry); the **last** `X-Forwarded-For` address must resolve through `tailscale whois --json` to a node in `allowedNodes` owned by `allowedLogin`. 127.0.0.1 mode only (Verified facts 5): no Unix-socket branch is built, so there is nothing to unit-test for it; the README states the limit (Task 12).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1764,6 +1799,13 @@ test("local token and access log are owner-only; the log never holds message tex
   expect(path.basename(log.file)).toBe("access.log");
   const line = JSON.parse(readFileSync(log.file, "utf8").trim());
   expect(Object.keys(line).sort()).toEqual(["at", "device", "method", "reason", "route", "session", "status"]);
+});
+
+test("with singleForwardedFor, more than one X-Forwarded-For entry is refused", async () => {
+  const strict = new Auth(s.config({ singleForwardedFor: true }), new Whois(s.config().bin.tailscale), "local-secret");
+  expect(await strict.check(req("GET", "/v1/machine", fromPhone))).toEqual({ ok: true, device: "bencell", via: "tailscale" });
+  expect(await strict.check(req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.2, 100.64.0.1" }))).toEqual({ ok: false, reason: "more than one X-Forwarded-For entry" });
+  expect((await auth.check(req("GET", "/v1/machine", { ...fromPhone, "X-Forwarded-For": "100.64.0.2, 100.64.0.1" }))).ok).toBe(true);
 });
 ```
 
@@ -1904,7 +1946,9 @@ export class Auth {
     const login = req.headers.get("tailscale-user-login");
     if (login !== this.cfg.allowedLogin) return deny("Tailscale login " + (login ?? "(none)") + " is not allowed");
     // tailscale serve appends the real address last; earlier entries can come from the client.
-    const ip = (req.headers.get("x-forwarded-for") ?? "").split(",").map((p) => p.trim()).filter(Boolean).pop() ?? "";
+    const entries = (req.headers.get("x-forwarded-for") ?? "").split(",").map((p) => p.trim()).filter(Boolean);
+    if (this.cfg.singleForwardedFor && entries.length > 1) return deny("more than one X-Forwarded-For entry");
+    const ip = entries.pop() ?? "";
     if (!ip) return deny("no Tailscale device address on the request");
     const who = await this.whois.lookup(ip);
     if (!who) return deny("Tailscale does not know the device at " + ip);
@@ -1930,7 +1974,7 @@ export class Auth {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/auth.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2229,50 +2273,413 @@ git push
 
 ---
 
-> **Tasks 8-12 are written at contract level.** Interfaces, file ownership, every test case
-> and its exact assertion, the commands and the commit are fixed below; the implementation
-> code is the builder's, written to make those tests pass using only the Task 1-7 APIs named
-> under **Consumes**. Same TDD loop as Tasks 1-7: write the test file, run it and see it fail
-> with `Cannot find module`, implement, run it and see it pass, commit with the message given.
+> **Tasks 8-12 are written at contract level.** Interfaces, file ownership, every test file in
+> full, the commands and the commit are fixed below; the implementation code is the builder's,
+> written to make those tests pass using only the APIs named under **Consumes**. Same TDD loop as
+> Tasks 1-7: write the test file exactly as given, run it and see it fail with `Cannot find module`,
+> implement, run it and see it pass, commit with the message given. A builder who finds a test that
+> cannot pass as written stops and reports it (never edits the test to fit).
 
-### Task 8: Router, hostd assembly, session registry, `/v1/machine`, `/v1/sessions`, events hub
+### Task 8: Router, hostd assembly, events hub, session registry, `/v1/machine`, `/v1/sessions`, `/v1/events`
 
 **Files (owned):**
-- Create: `server/src/router.ts`, `server/src/hostd.ts`, `server/src/version.ts`, `server/src/sessions/registry.ts`, `server/src/features/machine.ts`, `server/src/features/sessions.ts`, `server/test/helpers/client.ts`
+- Create: `server/src/router.ts`, `server/src/hostd.ts`, `server/src/version.ts`, `server/src/events/hub.ts`, `server/src/sessions/registry.ts`, `server/src/features/machine.ts`, `server/src/features/sessions.ts`, `server/test/helpers/client.ts`
 - Test: `server/test/registry.test.ts`, `server/test/hostd.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 1-5 (`HostdConfig`, `run`, `Scratch`, `ids`, `tmux`, `herdr`, `procs`, `livevoice`, `status`, `Auth`, `Whois`, `ensureLocalToken`, `AccessLog`).
+- Consumes: Tasks 1-6 (`HostdConfig`, `ConfigOverrides`, `run`, `Scratch`, `waitFor`, `ids`, `tmux`, `herdr`, `procs`, `livevoice`, `status`, `Auth`, `Whois`, `ensureLocalToken`, `AccessLog`, `SentLog`).
 - Produces:
-  - `router.ts`: `interface Ctx { device: string; via: "tailscale" | "local"; route: string; session: string }` (handlers set `ctx.session` for the access log); `interface Route { method: string; pattern: string; handler(req: Request, params: Record<string, string>, ctx: Ctx): Response | Promise<Response> }`; `interface Channel { pattern: string; open(ws: ServerWebSocket<WsData>): void; message(ws, data: string | Buffer): void; close(ws): void }`; `interface WsData { channel: Channel; params: Record<string, string>; query: URLSearchParams; ctx: Ctx; state: Record<string, unknown> }`; `interface Feature { routes: Route[]; channels: Channel[]; stop?(): void }`; `interface FeatureDeps { config: HostdConfig; registry: Registry; localToken: string }`; `type FeatureFactory = (d: FeatureDeps) => Feature`; `match(pattern, pathname): Record<string,string> | null` (`:id` segments, URL-decoded); `json(body, status = 200): Response`.
-  - `hostd.ts`: `createHostd(config: HostdConfig, factories: FeatureFactory[]): { port: number; url: string; localToken: string; registry: Registry; stop(): void }`. One `Bun.serve` on `config.host:config.apiPort` (port 0 allowed for tests). Order per request: `Auth.check` → 403 `{error}` (no CORS headers) and access-log line; `OPTIONS` → 204 with `corsHeaders`; route match → handler, CORS headers added; WebSocket upgrade only on a channel pattern; unknown → 404. Every request writes one `AccessLog` line (`route` = pattern, never the text or query).
+  - `router.ts`: `interface Ctx { device: string; via: "tailscale" | "local"; route: string; session: string }` (handlers set `ctx.session` for the access log); `interface Route { method: string; pattern: string; handler(req: Request, params: Record<string, string>, ctx: Ctx): Response | Promise<Response> }`; `interface Channel { pattern: string; open(ws: ServerWebSocket<WsData>): void; message(ws: ServerWebSocket<WsData>, data: string | Buffer): void; close(ws: ServerWebSocket<WsData>): void }`; `interface WsData { channel: Channel; params: Record<string, string>; query: URLSearchParams; ctx: Ctx; state: Record<string, unknown> }`; `interface Feature { routes: Route[]; channels: Channel[]; start?(): Promise<void>; stop?(): void | Promise<void> }`; `interface FeatureDeps { config: HostdConfig; registry: Registry; localToken: string; sentLog: SentLog; hub: EventsHub }`; `type FeatureFactory = (d: FeatureDeps) => Feature`; `match(pattern: string, pathname: string): Record<string, string> | null` (`:id` segments, URL-decoded); `json(body: unknown, status = 200): Response`.
+  - `events/hub.ts` (this task owns the events hub; P2 adds its notification and ack messages here): `class EventsHub { add(ws: ServerWebSocket<WsData>): void; remove(ws: ServerWebSocket<WsData>): void; broadcast(msg: object): number` (sends `JSON.stringify(msg)` to every added socket, returns how many) `; readonly size: number }`.
+  - `hostd.ts`: `interface Hostd { port: number; url: string; localToken: string; config: HostdConfig; registry: Registry; sentLog: SentLog; hub: EventsHub; stop(): Promise<void> }`; `createHostd(config: HostdConfig, factories: FeatureFactory[]): Promise<Hostd>`. It builds, in order: `ensureLocalToken(config.runtimeDir)`, `Whois(config.bin.tailscale)`, `Auth`, `AccessLog(config.stateDir)`, `Registry(config)`, `SentLog(config.stateDir)`, `EventsHub`; then every feature from `FeatureDeps`; then one `Bun.serve` on `config.host:config.apiPort` (port 0 allowed for tests); then `await feature.start?.()` for each feature in order. `stop()` runs every `feature.stop?.()`, `registry.stopWatching()` until idle, and `server.stop(true)`. Order per request: `Auth.check` → 403 `{error}` (no CORS headers) and access-log line; `OPTIONS` → 204 with `corsHeaders`; route match → handler, CORS headers added; WebSocket upgrade only on a channel pattern; unknown → 404. Every request writes one `AccessLog` line (`route` = pattern, never the text or query).
   - `version.ts`: `VERSION = "0.1.0"`.
-  - `registry.ts`: `interface SessionInfo { id; kind: "tmux" | "herdr"; name; cwd; status: SessionStatus; reported: boolean; questionCount: number; liveVoice: boolean | null; pinned: boolean; where: Where; attached: boolean; omp: { pid: number; transcript: string | null; inbox: boolean } | null; herdrStatus: string | null }`; `interface Tree { machine: string; scannedAt: string; sessions: SessionInfo[]; sources: { tmux: { socket: string; ok: boolean; error: string }[]; herdr: { ok: boolean; error: string }; liveVoice: { ok: boolean; error: string } } }`; `class Registry { constructor(cfg); scan(): Promise<Tree>; current(maxAgeMs = 2000): Promise<Tree>; get(id, maxAgeMs = 2000): Promise<SessionInfo | null>; onChange(fn: (t: Tree) => void): () => void; startWatching(): void; stopWatching(): void }`. Watching is refcounted: `startWatching` scans every `scanIntervalMs` while the count is above 0; an idle hostd never scans (SPEC 6 battery/CPU). `onChange` fires only when the JSON of `sessions` changed.
-  - Rules inside `scan()` (SPEC 4.2-4.4): tmux panes from every socket in `listSockets`; herdr agents from `listAgents`; omp found with `findOmp(procTable, panePid)`, transcript via `transcriptOf`, inbox via `hasInbox`; status from the transcript when it has an entry, else from `HERDR_STATUS[agent.status]` for herdr, else `unknown`; `name` = pane title with braille spinner chars `[\u2800-\u28ff]` and surrounding spaces removed, unless it equals the hostname or is empty, then `basename(cwd)`; `pinned` = cwd is `config.thalamusDir` or below; sort pinned first, then needs-you, then name. `liveVoice`: `true` if the omp pid is in `liveVoicePids`, `false` if not, `null` when pactl failed; for herdr sessions `null` whenever any live-voice pid could not be placed in a tmux pane (Verified facts 9: herdr pane pids are not exposed).
-  - `features/machine.ts`: `machineFeature: FeatureFactory`, `GET /v1/machine` → `{ name, version, authMode: "127.0.0.1", you: { device, via }, features: { tmux: boolean, herdr: boolean, pactl: boolean, tailscale: boolean } }` (presence of each `config.bin` file). Never lists sessions.
-  - `features/sessions.ts`: `sessionsFeature: FeatureFactory`, `GET /v1/sessions` → the `Tree`; channel `/v1/events` sends `{ type: "sessions", tree }` on open and on every change, calls `startWatching` on open and `stopWatching` on close.
-  - `test/helpers/client.ts`: `startTestHostd(s: Scratch, factories: FeatureFactory[], overrides?: Partial<HostdConfig>)` → hostd on port 0; `localHeaders(h)` → `{ "X-Porthole": "1", "X-Porthole-Local": token }`; `get(h, path)`, `post(h, path, body)` (adds `Origin: config.origin`); `openWs(h, path)` → `new WebSocket(url, { headers: { Origin, "X-Porthole-Local" } })` plus a message queue `next(type, timeoutMs)`; `rawUpgrade(port, path, headers)` → HTTP status code read with `node:net` (for refused upgrades).
+  - `registry.ts`: `interface SessionInfo { id: string; kind: "tmux" | "herdr"; name: string; cwd: string; status: SessionStatus; reported: boolean; questionCount: number; liveVoice: boolean | null; pinned: boolean; where: Where; attached: boolean; omp: { pid: number; transcript: string | null; inbox: boolean } | null; herdrStatus: string | null }`; `interface Tree { machine: string; scannedAt: string; sessions: SessionInfo[]; sources: { tmux: { socket: string; ok: boolean; error: string }[]; herdr: { ok: boolean; error: string }; liveVoice: { ok: boolean; error: string } } }`; `class Registry { constructor(cfg: HostdConfig); scan(): Promise<Tree>; current(maxAgeMs = 2000): Promise<Tree>; get(id: string, maxAgeMs = 2000): Promise<SessionInfo | null>; onChange(fn: (t: Tree) => void): () => void; startWatching(): void; stopWatching(): void }`. `get(id, 0)` always scans first. Watching is refcounted: `startWatching` scans every `scanIntervalMs` while the count is above 0; an idle hostd never scans (SPEC 6 battery/CPU). `onChange` fires only when the JSON of `sessions` changed.
+  - Rules inside `scan()` (SPEC 4.2-4.4): tmux panes from every socket in `listSockets`; herdr agents from `listAgents`; omp found with `findOmp(procTable, panePid)`, transcript via `transcriptOf`, inbox via `hasInbox`; status from the transcript when it has an entry, else from `HERDR_STATUS[agent.status]` for herdr, else `unknown`; `herdrStatus` = the agent's raw herdr status (`null` for tmux). tmux `name` = pane title with braille spinner chars `[\u2800-\u28ff]` and surrounding spaces removed, unless it equals the hostname or is empty, then `basename(cwd)`; herdr `name` = agent `name`, else title, else `basename(cwd)`, else the pane id. `pinned` = cwd is `config.thalamusDir` or below; sort pinned first, then needs-you, then name, then id. `liveVoice` for a tmux pane: `null` when pactl failed, else `true` when any live-voice pid is the pane process or below it (this covers omp and anything else in the pane), else `false`. For herdr: `null` when pactl failed or when any live-voice pid could not be placed in a tmux pane (Verified facts 9: herdr pane pids are not exposed), else `false`.
+  - `features/machine.ts`: `machineFeature: FeatureFactory`, `GET /v1/machine` → `{ name, version, authMode: "127.0.0.1", you: { device, via, forwardedFor: string[] }, features: { tmux: boolean, herdr: boolean, pactl: boolean, tailscale: boolean } }` (`forwardedFor` = the request's `X-Forwarded-For` entries in order, trimmed, for Task 12's live check; `features` = presence of each `config.bin` file). Never lists sessions.
+  - `features/sessions.ts`: `sessionsFeature: FeatureFactory`, `GET /v1/sessions` → the `Tree` (`registry.current()`); channel `/v1/events`: on open `hub.add(ws)`, `startWatching()`, send `{ type: "sessions", tree }`; `registry.onChange` → `hub.broadcast({ type: "sessions", tree })`; on close `hub.remove(ws)`, `stopWatching()`.
+  - `test/helpers/client.ts` (full code below).
 
-**Tests (`registry.test.ts`, scratch tmux server + fake herdr + fake pactl):**
-1. `finds a scratch tmux omp session with its transcript and status`: `newTmuxServer("work", s.ompCommand("chat-basic.jsonl"))`; `scan()` → one tmux session, `id === sessionId(where)`, `omp.pid` set, `omp.transcript` ends with `chat-basic.jsonl`, `status` equal to `statusFromTranscript` of that fixture, `liveVoice === false`.
-2. `live voice shows on the matching session only`: `setLiveVoicePids([omp pid])` → that session `liveVoice === true`, a second scratch session `false`; `breakPactl()` → both `null` and `sources.liveVoice.ok === false`.
-3. `herdr agents become sessions; their liveVoice is null while an unplaced live-voice pid exists`: `setHerdrAgents([...one idle agent...])` → `kind "herdr"`, `status` from `HERDR_STATUS`; with `setLiveVoicePids([99999])` → herdr `liveVoice === null`.
-4. `names: spinner stripped, hostname falls back to the folder`: pane titles `"⠋ fixing auth"` → `"fixing auth"`; title = `os.hostname()` → `basename(cwd)`.
-5. `Thalamus is pinned first`: session with cwd `s.thalamusDir` sorts first, `pinned === true`.
-6. `a dead tmux socket is reported, not thrown`: an empty file in `s.socketDir` → `sources.tmux` has `{ ok: false }` for it, other sessions still listed.
-7. `idle hostd does not scan`: after construction and 3× `scanIntervalMs`, `fakeCalls("herdr").length === 0`; after `startWatching()` it grows; after `stopWatching()` it stops growing.
+**`server/test/helpers/client.ts`:**
 
-**Tests (`hostd.test.ts`):**
-1. `GET /v1/machine with the local token` → 200, `authMode "127.0.0.1"`, `you.device "local"`, no `sessions` key.
-2. `refusals are 403 and logged without text`: no `X-Porthole` → 403; foreign `Origin` → 403; `access.log` last line has `status: 403` and a non-empty `reason`.
-3. `GET /v1/sessions` lists the scratch session; unknown path → 404; `OPTIONS` with the right Origin → 204 and `Access-Control-Allow-Origin`.
-4. `events: snapshot on open, update on change`: `openWs("/v1/events")` → first message `type "sessions"`; start a second scratch tmux session → a later `sessions` message lists 2.
-5. `WebSocket upgrade without Origin is refused`: `rawUpgrade(port, "/v1/events", { "X-Porthole-Local": token })` → 403.
-6. `binds only to config.host`: `h.url` starts with `http://127.0.0.1:`.
+```ts
+import { connect } from "node:net";
+import type { ConfigOverrides } from "../../src/config";
+import { createHostd, type Hostd } from "../../src/hostd";
+import type { FeatureFactory } from "../../src/router";
+import { sessionId } from "../../src/sessions/ids";
+import { findOmp, readProcTable } from "../../src/sessions/procs";
+import { type Scratch, waitFor } from "./scratch";
+
+export type TestHostd = Hostd;
+
+/** hostd on 127.0.0.1, port 0, every path inside the scratch folder. */
+export function startTestHostd(s: Scratch, factories: FeatureFactory[], overrides: ConfigOverrides = {}): Promise<TestHostd> {
+  return createHostd(s.config(overrides), factories);
+}
+
+export function localHeaders(h: TestHostd): Record<string, string> {
+  return { "X-Porthole": "1", "X-Porthole-Local": h.localToken };
+}
+
+export function get(h: TestHostd, p: string, headers: Record<string, string> = {}): Promise<Response> {
+  return fetch(h.url + p, { headers: { ...localHeaders(h), ...headers } });
+}
+
+export function post(h: TestHostd, p: string, body: unknown): Promise<Response> {
+  return fetch(h.url + p, {
+    method: "POST",
+    headers: { ...localHeaders(h), Origin: h.config.origin, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+export interface WsMessage { type: string; [key: string]: unknown }
+export interface TestWs {
+  ws: WebSocket;
+  /** Every JSON text message, in arrival order. */
+  seen: WsMessage[];
+  /** The next message of `type` that `next` has not returned yet. */
+  next(type: string, timeoutMs?: number): Promise<WsMessage>;
+  /** All binary frames so far, decoded as UTF-8. */
+  output(): string;
+  send(data: string | Uint8Array): void;
+  closed: Promise<number>;
+  close(): void;
+}
+
+export async function openWs(h: TestHostd, p: string, origin: string = h.config.origin): Promise<TestWs> {
+  const ws = new WebSocket(h.url.replace(/^http/, "ws") + p, { headers: { Origin: origin, "X-Porthole-Local": h.localToken } });
+  ws.binaryType = "arraybuffer";
+  const seen: WsMessage[] = [];
+  const taken = new Set<WsMessage>();
+  const dec = new TextDecoder();
+  let out = "";
+  ws.onmessage = (e: MessageEvent) => {
+    if (typeof e.data === "string") seen.push(JSON.parse(e.data) as WsMessage);
+    else out += dec.decode(new Uint8Array(e.data as ArrayBuffer), { stream: true });
+  };
+  const closed = new Promise<number>((resolve) => { ws.onclose = (e: CloseEvent) => resolve(e.code); });
+  await new Promise<void>((resolve, reject) => {
+    ws.onopen = () => resolve();
+    ws.onerror = () => reject(new Error("WebSocket to " + p + " did not open"));
+  });
+  return {
+    ws,
+    seen,
+    async next(type, timeoutMs = 3000) {
+      let found: WsMessage | undefined;
+      await waitFor(() => {
+        found = seen.find((m) => m.type === type && !taken.has(m));
+        return found !== undefined;
+      }, timeoutMs, 10);
+      taken.add(found as WsMessage);
+      return found as WsMessage;
+    },
+    output: () => out,
+    send: (data) => ws.send(data),
+    closed,
+    close: () => ws.close(1000),
+  };
+}
+
+/** Status code of a WebSocket upgrade, read from the raw HTTP answer (0 = no answer). */
+export function rawUpgrade(port: number, p: string, headers: Record<string, string>): Promise<number> {
+  const lines = ["GET " + p + " HTTP/1.1", "Host: 127.0.0.1:" + port, "Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version: 13", ...Object.entries(headers).map(([k, v]) => k + ": " + v)];
+  return new Promise((resolve) => {
+    const sock = connect(port, "127.0.0.1", () => sock.write(lines.join("\r\n") + "\r\n\r\n"));
+    let buf = "";
+    const timer = setTimeout(() => { sock.destroy(); resolve(0); }, 3000);
+    sock.on("data", (d: Buffer) => {
+      buf += d.toString("latin1");
+      const m = /^HTTP\/1\.1 (\d{3})/.exec(buf);
+      if (m) { clearTimeout(timer); sock.destroy(); resolve(Number(m[1])); }
+    });
+    sock.on("error", () => { clearTimeout(timer); resolve(0); });
+  });
+}
+
+export interface TestPane { socket: string; pid: number; id: string }
+
+/** A scratch tmux session running `command`; on `socket` when given, else on a new scratch server. `pid` = pane process. */
+export async function pane(s: Scratch, session: string, command = "/bin/sh", socket?: string): Promise<TestPane> {
+  const sock = socket ?? s.newTmuxServer(session, command);
+  if (socket) s.tmux(socket, "new-session", "-d", "-s", session, "-x", "120", "-y", "40", "-c", s.root, command);
+  return { socket: sock, pid: s.panePid(sock, "=" + session + ":0.0"), id: sessionId({ kind: "tmux", socket: sock, session, window: 0, pane: 0 }) };
+}
+
+/** A scratch tmux session running the fake omp on `transcript`; `pid` = the omp process. */
+export async function ompPane(s: Scratch, session: string, transcript: string, socket?: string): Promise<TestPane> {
+  const p = await pane(s, session, s.ompCommand(transcript), socket);
+  let pid = 0;
+  await waitFor(() => {
+    pid = findOmp(readProcTable(), p.pid) ?? 0;
+    return pid > 0;
+  });
+  return { ...p, pid };
+}
+```
+
+**Tests (`server/test/registry.test.ts`, scratch tmux servers + fake herdr + fake pactl):**
+
+```ts
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { hostname } from "node:os";
+import path from "node:path";
+import type { HostdConfig } from "../src/config";
+import { sessionId } from "../src/sessions/ids";
+import { Registry, type SessionInfo, type Tree } from "../src/sessions/registry";
+import { statusFromTranscript } from "../src/sessions/status";
+import { Scratch, waitFor } from "./helpers/scratch";
+
+let s: Scratch;
+let cfg: HostdConfig;
+beforeEach(() => {
+  s = new Scratch();
+  cfg = s.config();
+});
+afterEach(() => s.cleanup());
+
+const bySession = (t: Tree, session: string): SessionInfo => {
+  const found = t.sessions.find((x) => x.where.kind === "tmux" && x.where.session === session);
+  if (!found) throw new Error("no session " + session + " in " + JSON.stringify(t.sessions.map((x) => x.id)));
+  return found;
+};
+const addSession = (sock: string, session: string, command: string, cwd = s.root) =>
+  s.tmux(sock, "new-session", "-d", "-s", session, "-x", "120", "-y", "40", "-c", cwd, command);
+const herdrAgent = (status: string, extra: Record<string, string> = {}) =>
+  s.setHerdrAgents([{ terminal_id: "t1", agent_status: status, workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", focused: false, revision: 1, ...extra }]);
+
+test("finds a scratch tmux omp session with its transcript and status", async () => {
+  const file = s.transcript("chat-basic.jsonl");
+  const sock = s.newTmuxServer("work", s.ompCommand(file));
+  let t: Tree = await new Registry(cfg).scan();
+  await waitFor(async () => {
+    t = await new Registry(cfg).scan();
+    return t.sessions[0]?.omp !== null && t.sessions[0]?.omp !== undefined;
+  });
+  expect(t.sessions.length).toBe(1);
+  const one = t.sessions[0];
+  expect(one.id).toBe(sessionId({ kind: "tmux", socket: sock, session: "work", window: 0, pane: 0 }));
+  expect(one.kind).toBe("tmux");
+  expect(one.omp?.pid).toBeGreaterThan(0);
+  expect(one.omp?.transcript?.endsWith("chat-basic.jsonl")).toBe(true);
+  expect(one.omp?.inbox).toBe(false);
+  expect(one.status).toBe(statusFromTranscript(file).status);
+  expect(one.liveVoice).toBe(false);
+  expect(one.herdrStatus).toBeNull();
+});
+
+test("live voice shows on the matching session only; unknown when pactl fails", async () => {
+  const sock = s.newTmuxServer("work", s.ompCommand(s.transcript("chat-basic.jsonl")));
+  addSession(sock, "other", "/bin/sh");
+  const r = new Registry(cfg);
+  let pid = 0;
+  await waitFor(async () => {
+    pid = bySession(await r.scan(), "work").omp?.pid ?? 0;
+    return pid > 0;
+  });
+  s.setLiveVoicePids([pid]);
+  const t = await r.scan();
+  expect([bySession(t, "work").liveVoice, bySession(t, "other").liveVoice]).toEqual([true, false]);
+  s.breakPactl(true);
+  const broken = await r.scan();
+  expect([bySession(broken, "work").liveVoice, bySession(broken, "other").liveVoice]).toEqual([null, null]);
+  expect(broken.sources.liveVoice.ok).toBe(false);
+});
+
+test("herdr agents become sessions; their liveVoice is null while an unplaced live-voice pid exists", async () => {
+  herdrAgent("idle", { name: "rev", cwd: "/work" });
+  const r = new Registry(cfg);
+  const t = await r.scan();
+  const h = t.sessions.find((x) => x.kind === "herdr");
+  expect(h && [h.id, h.status, h.herdrStatus, h.name, h.liveVoice]).toEqual([sessionId({ kind: "herdr", workspace: "w1", tab: "w1:t1", pane: "w1:p1" }), "idle", "idle", "rev", false]);
+  herdrAgent("blocked", { name: "rev" });
+  const blocked = (await r.scan()).sessions.find((x) => x.kind === "herdr");
+  expect([blocked?.status, blocked?.herdrStatus]).toEqual(["needs-you", "blocked"]);
+  s.setLiveVoicePids([99999]);
+  expect((await r.scan()).sessions.find((x) => x.kind === "herdr")?.liveVoice).toBeNull();
+  expect(t.sources.herdr.ok).toBe(true);
+});
+
+test("names: spinner stripped, hostname falls back to the folder", async () => {
+  const sock = s.newTmuxServer("work", "/bin/sh");
+  const r = new Registry(cfg);
+  s.tmux(sock, "select-pane", "-t", "=work:0.0", "-T", "\u280b fixing auth ");
+  expect(bySession(await r.scan(), "work").name).toBe("fixing auth");
+  s.tmux(sock, "select-pane", "-t", "=work:0.0", "-T", hostname());
+  expect(bySession(await r.scan(), "work").name).toBe(path.basename(s.root));
+});
+
+test("Thalamus is pinned first, then needs-you, then by name", async () => {
+  const sock = s.newTmuxServer("aaa", "/bin/sh");
+  addSession(sock, "zzz", "/bin/sh", s.thalamusDir);
+  addSession(sock, "ask", s.ompCommand(s.transcript("status-needs-you.jsonl")));
+  const r = new Registry(cfg);
+  let t: Tree = await r.scan();
+  await waitFor(async () => {
+    t = await r.scan();
+    return bySession(t, "ask").status === "needs-you";
+  });
+  expect(t.sessions[0].pinned).toBe(true);
+  expect((t.sessions[0].where as { session: string }).session).toBe("zzz");
+  expect((t.sessions[1].where as { session: string }).session).toBe("ask");
+  expect(bySession(t, "aaa").pinned).toBe(false);
+});
+
+test("a dead tmux socket is reported, not thrown", async () => {
+  s.newTmuxServer("alive", "/bin/sh");
+  writeFileSync(path.join(s.socketDir, "dead-socket"), "");
+  const t = await new Registry(cfg).scan();
+  expect(t.sources.tmux.find((x) => x.socket === "dead-socket")?.ok).toBe(false);
+  expect(t.sessions.map((x) => (x.where as { session: string }).session)).toEqual(["alive"]);
+});
+
+test("an idle registry does not scan; watching scans; stopping stops", async () => {
+  const r = new Registry(cfg);
+  await Bun.sleep(cfg.scanIntervalMs * 3);
+  expect(s.fakeCalls("herdr").length).toBe(0);
+  r.startWatching();
+  await waitFor(() => s.fakeCalls("herdr").length > 0, 3000);
+  r.stopWatching();
+  await Bun.sleep(cfg.scanIntervalMs);
+  const n = s.fakeCalls("herdr").length;
+  await Bun.sleep(cfg.scanIntervalMs * 3);
+  expect(s.fakeCalls("herdr").length).toBe(n);
+});
+
+test("P1.1 acceptance: two sockets, three omp statuses, a herdr pane, one live-voice pid", async () => {
+  const sockA = s.newTmuxServer("needs", s.ompCommand(s.transcript("status-needs-you.jsonl")));
+  addSession(sockA, "working", s.ompCommand(s.transcript("status-working.jsonl")));
+  const sockB = s.newTmuxServer("done", s.ompCommand(s.transcript("status-done.jsonl")));
+  herdrAgent("working", { name: "herdr-agent" });
+  const r = new Registry(cfg);
+  let t: Tree = await r.scan();
+  await waitFor(async () => {
+    t = await r.scan();
+    return ["needs", "working", "done"].every((n) => t.sessions.some((x) => x.where.kind === "tmux" && x.where.session === n && x.omp));
+  });
+  s.setLiveVoicePids([bySession(t, "working").omp?.pid ?? -1]);
+  t = await r.scan();
+  const view = Object.fromEntries(t.sessions.map((x) => [x.id, [x.status, x.liveVoice]]));
+  expect(view).toEqual({
+    [sessionId({ kind: "tmux", socket: sockA, session: "needs", window: 0, pane: 0 })]: ["needs-you", false],
+    [sessionId({ kind: "tmux", socket: sockA, session: "working", window: 0, pane: 0 })]: ["working", true],
+    [sessionId({ kind: "tmux", socket: sockB, session: "done", window: 0, pane: 0 })]: ["done", false],
+    [sessionId({ kind: "herdr", workspace: "w1", tab: "w1:t1", pane: "w1:p1" })]: ["working", false],
+  });
+  expect(t.sources.tmux.map((x) => x.ok)).toEqual([true, true]);
+  expect([t.sources.herdr.ok, t.sources.liveVoice.ok]).toEqual([true, true]);
+  expect(t.sessions[0].status).toBe("needs-you");
+});
+```
+
+**Tests (`server/test/hostd.test.ts`):**
+
+```ts
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { AccessLog } from "../src/auth/accesslog";
+import { SentLog } from "../src/deliver/sentlog";
+import { machineFeature } from "../src/features/machine";
+import { sessionsFeature } from "../src/features/sessions";
+import type { FeatureFactory } from "../src/router";
+import { get, localHeaders, openWs, pane, rawUpgrade, startTestHostd, type TestHostd } from "./helpers/client";
+import { Scratch, waitFor } from "./helpers/scratch";
+
+let s: Scratch;
+let h: TestHostd;
+beforeEach(async () => {
+  s = new Scratch();
+  h = await startTestHostd(s, [machineFeature, sessionsFeature]);
+});
+afterEach(async () => {
+  await h.stop();
+  s.cleanup();
+});
+
+test("GET /v1/machine with the local token", async () => {
+  const r = await get(h, "/v1/machine");
+  expect(r.status).toBe(200);
+  const body = (await r.json()) as Record<string, unknown>;
+  expect(body.name).toBe("testhost");
+  expect(body.version).toBe("0.1.0");
+  expect(body.authMode).toBe("127.0.0.1");
+  expect(body.you).toEqual({ device: "local", via: "local", forwardedFor: [] });
+  expect(Object.keys(body.features as object).sort()).toEqual(["herdr", "pactl", "tailscale", "tmux"]);
+  expect("sessions" in body).toBe(false);
+});
+
+test("refusals are 403 and logged without text", async () => {
+  expect((await fetch(h.url + "/v1/machine", { headers: { "X-Porthole-Local": h.localToken } })).status).toBe(403);
+  expect((await get(h, "/v1/machine", { Origin: "https://evil.example" })).status).toBe(403);
+  const lines = readFileSync(new AccessLog(s.stateDir).file, "utf8").trim().split("\n");
+  const last = JSON.parse(lines[lines.length - 1]) as { status: number; reason: string; route: string };
+  expect(last.status).toBe(403);
+  expect(last.reason.length).toBeGreaterThan(0);
+  expect(last.route).toBe("/v1/machine");
+});
+
+test("GET /v1/sessions lists the scratch session; unknown path 404; OPTIONS 204 with CORS", async () => {
+  const p = await pane(s, "work", "/bin/sh");
+  const tree = (await (await get(h, "/v1/sessions")).json()) as { sessions: { id: string }[] };
+  expect(tree.sessions.map((x) => x.id)).toEqual([p.id]);
+  expect((await get(h, "/v1/nothing-here")).status).toBe(404);
+  const opt = await fetch(h.url + "/v1/sessions", { method: "OPTIONS", headers: { Origin: h.config.origin } });
+  expect(opt.status).toBe(204);
+  expect(opt.headers.get("access-control-allow-origin")).toBe(h.config.origin);
+});
+
+test("events: snapshot on open, update on change, through the hub", async () => {
+  const p = await pane(s, "one", "/bin/sh");
+  const ws = await openWs(h, "/v1/events");
+  const first = await ws.next("sessions", 3000);
+  expect(((first.tree as { sessions: unknown[] }).sessions).length).toBe(1);
+  expect(h.hub.size).toBe(1);
+  s.tmux(p.socket, "new-session", "-d", "-s", "two", "/bin/sh");
+  await waitFor(() => ws.seen.some((m) => m.type === "sessions" && (m.tree as { sessions: unknown[] }).sessions.length === 2), 5000);
+  ws.close();
+  await waitFor(() => h.hub.size === 0);
+});
+
+test("WebSocket upgrades need the exact control-room Origin", async () => {
+  const token = { "X-Porthole-Local": h.localToken };
+  expect(await rawUpgrade(h.port, "/v1/events", token)).toBe(403);
+  expect(await rawUpgrade(h.port, "/v1/events", { ...token, Origin: "https://evil.example" })).toBe(403);
+  expect(await rawUpgrade(h.port, "/v1/events", { ...token, Origin: h.config.origin + ":8443" })).toBe(403);
+  expect(await rawUpgrade(h.port, "/v1/events", { ...token, Origin: h.config.origin })).toBe(101);
+});
+
+test("binds only to config.host", () => {
+  expect(h.url.startsWith("http://127.0.0.1:")).toBe(true);
+  expect(localHeaders(h)["X-Porthole-Local"]).toBe(h.localToken);
+});
+
+test("features get sentLog and hub, start before createHostd resolves, and stop with hostd", async () => {
+  const calls: string[] = [];
+  const probe: FeatureFactory = (deps) => ({
+    routes: [],
+    channels: [],
+    async start() {
+      await Bun.sleep(50);
+      calls.push("start:" + (deps.sentLog instanceof SentLog) + ":" + deps.hub.size);
+    },
+    stop() {
+      calls.push("stop");
+    },
+  });
+  const h2 = await startTestHostd(s, [probe]);
+  expect(calls).toEqual(["start:true:0"]);
+  expect(h2.sentLog.file).toBe(new SentLog(s.stateDir).file);
+  await h2.stop();
+  expect(calls).toEqual(["start:true:0", "stop"]);
+});
+```
 
 Run: `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/registry.test.ts server/test/hostd.test.ts`
+Expected before implementing: FAIL, `Cannot find module '../src/sessions/registry'`. After: PASS, 15 tests.
 
-Commit: `P1 task 8: router, hostd assembly, session registry, machine/sessions/events routes`
+Commit: `P1 task 8: router, hostd assembly, events hub, session registry, machine/sessions/events routes`
 
 ---
 
@@ -2283,20 +2690,120 @@ Commit: `P1 task 8: router, hostd assembly, session registry, machine/sessions/e
 - Test: `server/test/chat.test.ts`
 
 **Interfaces:**
-- Consumes: Task 4 (`readPage`, `readAfter`, `Follower`), Task 2 (`capturePane`, `readScreen`), Task 8 (router, `Registry`, `client.ts`).
+- Consumes: Task 4 (`readPage`, `readAfter`, `Follower`, `Page`), Task 2 (`capturePane`, `readScreen`), Task 8 (`FeatureFactory`, `FeatureDeps`, `Registry`, `client.ts`).
 - Produces: `chatFeature: FeatureFactory` with
-  - `GET /v1/sessions/:id/chat?before=<cursor>|after=<cursor>&limit=<1..200, default 50>` → `Page` (`after` → `readAfter`). No such session → 404 `{error}`; no transcript → 200 `{ items: [], start: 0, end: 0, hasOlder: false, note: "this session has no omp transcript; use Terminal or Screen" }`.
-  - channel `/v1/sessions/:id/chat` → on open `{ type: "backlog", page }` (last 50) then `{ type: "append", items, end }` from a `Follower`; on the follower's reset `{ type: "backlog", page }` again; no transcript → `{ type: "error", error }` and close 1000. When the registry later reports a different transcript for the session (omp `/new`), `Follower.moveTo` and a fresh backlog.
-  - `GET /v1/sessions/:id/screen?lines=<default 200>` → `{ text, source: "tmux" | "herdr", at }` from `capturePane` / `readScreen`; a source error → 502 `{ error }`.
+  - `GET /v1/sessions/:id/chat?before=<cursor>|after=<cursor>&limit=<1..200, default 50>` → `Page` (`after` → `readAfter`). No such session → 404 `{ error: "no such session" }`; no transcript → 200 `{ items: [], start: 0, end: 0, hasOlder: false, note: "this session has no omp transcript; use Terminal or Screen" }`.
+  - channel `/v1/sessions/:id/chat` → on open `{ type: "backlog", page }` (last 50) then `{ type: "append", items, end }` from a `Follower` started at `page.end`; on the follower's reset `{ type: "backlog", page }` again. No such session → `{ type: "error", error: "no such session" }` and close 1000; no transcript → `{ type: "error", error: "this session has no omp transcript" }` and close 1000.
+  - **Transcript change (omp `/new`, or omp restarted in the pane):** while any chat socket is open the feature holds `registry.startWatching()` (released with `stopWatching()` when the last one closes) and listens with `registry.onChange`. When the session's `omp.transcript` differs from the file the socket follows, it calls `stop()` on the old `Follower`, sends a fresh `{ type: "backlog", page }` from the new file, and starts a **new** `Follower` on the new file at that page's `end` (a `Follower`'s file is fixed for its life).
+  - `GET /v1/sessions/:id/screen?lines=<1..2000, default 200>` → `{ text, source: "tmux" | "herdr", at }` from `capturePane` / `readScreen`; a source error → 502 `{ error }`; no such session → 404.
 
-**Tests (`chat.test.ts`):**
-1. `pages over HTTP`: scratch omp session on `chat-basic.jsonl`; `GET .../chat?limit=1` → last item text `"Also check the tests"`, `hasOlder true`; `?before=<start>` returns older items.
-2. `WebSocket backlog then append`: open chat channel → `backlog`; `writeTranscript` appends one user line → `append` with that text; truncate the file → a second `backlog`.
-3. `no transcript`: plain `bash` scratch session → HTTP note above; WS → `{ type: "error" }`.
-4. `screen shows the tmux pane`: `printf` a marker in a scratch pane → `/screen` text contains the marker, `source "tmux"`; herdr session with `setHerdrScreen("hello herdr")` → `source "herdr"`.
-5. `unknown session` → 404 on all three.
+**Tests (`server/test/chat.test.ts`):**
+
+```ts
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { appendFileSync, truncateSync } from "node:fs";
+import { chatFeature } from "../src/features/chat";
+import { sessionId } from "../src/sessions/ids";
+import { get, ompPane, openWs, pane, startTestHostd, type TestHostd } from "./helpers/client";
+import { Scratch, waitFor } from "./helpers/scratch";
+
+let s: Scratch;
+let h: TestHostd;
+beforeEach(async () => {
+  s = new Scratch();
+  h = await startTestHostd(s, [chatFeature]);
+});
+afterEach(async () => {
+  await h.stop();
+  s.cleanup();
+});
+
+type Item = { cursor: number; text: string };
+type PageBody = { items: Item[]; start: number; end: number; hasOlder: boolean; note?: string };
+const userLine = (id: string, text: string) =>
+  JSON.stringify({ type: "message", id, parentId: null, timestamp: new Date().toISOString(), message: { role: "user", content: [{ type: "text", text }] } }) + "\n";
+const chatPath = (id: string) => "/v1/sessions/" + encodeURIComponent(id) + "/chat";
+
+test("pages over HTTP", async () => {
+  const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  const last = (await (await get(h, chatPath(p.id) + "?limit=1")).json()) as PageBody;
+  expect(last.items.map((i) => i.text)).toEqual(["Also check the tests"]);
+  expect(last.hasOlder).toBe(true);
+  const older = (await (await get(h, chatPath(p.id) + "?before=" + last.start + "&limit=50")).json()) as PageBody;
+  expect(older.items.length).toBeGreaterThan(0);
+  expect(older.items.every((i) => i.cursor < last.start)).toBe(true);
+  const after = (await (await get(h, chatPath(p.id) + "?after=" + older.items[0].cursor)).json()) as PageBody;
+  expect(after.items.at(-1)?.text).toBe("Also check the tests");
+});
+
+test("WebSocket backlog, then append, then a new backlog after the file shrinks", async () => {
+  const file = s.transcript("chat-basic.jsonl", "live.jsonl");
+  const p = await ompPane(s, "omp", file);
+  const ws = await openWs(h, chatPath(p.id));
+  const first = await ws.next("backlog", 3000);
+  expect((first.page as PageBody).items.at(-1)?.text).toBe("Also check the tests");
+  appendFileSync(file, userLine("u90", "new from the test"));
+  const add = await ws.next("append", 3000);
+  expect((add.items as Item[]).map((i) => i.text)).toEqual(["new from the test"]);
+  truncateSync(file, 0);
+  const again = await ws.next("backlog", 3000);
+  expect((again.page as PageBody).items).toEqual([]);
+  ws.close();
+});
+
+test("a different transcript in the same pane (omp /new) restarts the follower on the new file", async () => {
+  const fileA = s.transcript("chat-basic.jsonl", "a.jsonl");
+  const fileB = s.writeTranscript("b.jsonl", userLine("b1", "from file B"));
+  const p = await ompPane(s, "omp", fileA);
+  const ws = await openWs(h, chatPath(p.id));
+  await ws.next("backlog", 3000);
+  s.tmux(p.socket, "respawn-pane", "-k", "-t", "=omp:0.0", s.ompCommand(fileB));
+  const moved = await ws.next("backlog", 5000);
+  expect((moved.page as PageBody).items.map((i) => i.text)).toEqual(["from file B"]);
+  appendFileSync(fileA, userLine("a99", "old file, ignored"));
+  appendFileSync(fileB, userLine("b2", "B again"));
+  const add = await ws.next("append", 3000);
+  expect((add.items as Item[]).map((i) => i.text)).toEqual(["B again"]);
+  await Bun.sleep(500);
+  expect(JSON.stringify(ws.seen)).not.toContain("old file, ignored");
+  ws.close();
+});
+
+test("no transcript: HTTP note and a WebSocket error", async () => {
+  const p = await pane(s, "plain", "/bin/sh");
+  const r = await get(h, chatPath(p.id));
+  expect(r.status).toBe(200);
+  expect(((await r.json()) as PageBody).note).toBe("this session has no omp transcript; use Terminal or Screen");
+  const ws = await openWs(h, chatPath(p.id));
+  expect((await ws.next("error", 3000)).error).toBe("this session has no omp transcript");
+  expect(await ws.closed).toBe(1000);
+});
+
+test("screen shows the tmux pane and the herdr screen", async () => {
+  const p = await pane(s, "plain", "/bin/sh");
+  s.tmux(p.socket, "send-keys", "-t", "=plain:0.0", "printf 'marker-%s\\n' 42", "Enter");
+  await waitFor(async () => (((await (await get(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/screen")).json()) as { text: string }).text.includes("marker-42")));
+  const tm = (await (await get(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/screen")).json()) as { source: string };
+  expect(tm.source).toBe("tmux");
+  s.setHerdrAgents([{ terminal_id: "t1", agent_status: "idle", workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", focused: false, revision: 1 }]);
+  s.setHerdrScreen("w1:p1", "hello herdr\n");
+  const hid = sessionId({ kind: "herdr", workspace: "w1", tab: "w1:t1", pane: "w1:p1" });
+  const hr = (await (await get(h, "/v1/sessions/" + encodeURIComponent(hid) + "/screen")).json()) as { text: string; source: string };
+  expect([hr.source, hr.text.includes("hello herdr")]).toEqual(["herdr", true]);
+});
+
+test("unknown session: 404 on chat and screen, error on the channel", async () => {
+  const id = "tmux:nope:nope:0.0";
+  expect((await get(h, chatPath(id))).status).toBe(404);
+  expect((await get(h, "/v1/sessions/" + encodeURIComponent(id) + "/screen")).status).toBe(404);
+  const ws = await openWs(h, chatPath(id));
+  expect((await ws.next("error", 3000)).error).toBe("no such session");
+  expect(await ws.closed).toBe(1000);
+});
+```
 
 Run: `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/chat.test.ts`
+Expected before implementing: FAIL, `Cannot find module '../src/features/chat'`. After: PASS, 6 tests.
 
 Commit: `P1 task 9: chat history/live chat and screen routes`
 
@@ -2309,30 +2816,421 @@ Commit: `P1 task 9: chat history/live chat and screen routes`
 - Test: `server/test/deliver.test.ts`, `server/test/keys.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 2, 3, 6, 8.
+- Consumes: Task 1 (`HostdConfig`, `Scratch`, `waitFor`), Task 2 (`sessionId`, `sendText`, `sendKeys`, `prompt`, `herdrSendKeys`† , `herdrError`), Task 3 (`ompAlive`), Task 6 (`SentLog`, `SendRecord`, `CLIENT_MSG_ID`, `MAX_MESSAGE_BYTES`, `inboxDir`, `stageInbox`, `commitInbox`, `waitTaken`), Task 8 (`Feature`, `FeatureDeps` incl. `sentLog`, `FeatureFactory`, `Registry`, `client.ts`). † `herdr.ts`'s `sendKeys`, imported as `sendKeys as herdrSendKeys`.
 - Produces:
-  - `keys.ts`: `type KeyStep = { key: string } | { text: string }`; `parseSteps(steps: string[]): KeyStep[] | { error: string }` accepting `Tab Enter Esc Space BSpace Up Down Left Right Home End PageUp PageDown`, `C-<a-z>`, one printable character, and `text:<anything>`; at most 32 steps. `TMUX_KEYS: Record<string, string>` (`Esc → Escape`, others same name). `HERDR_KEYS: Record<string, string>` (`Esc → esc` verified; the rest lower-case names, **GUESS**, Needs Ben 2).
-  - `deliver.ts`: `class Deliverer { constructor(cfg, registry, sentlog); send(sessionId, clientMsgId, text): Promise<SendRecord>; status(clientMsgId): SendRecord | undefined; keys(sessionId, steps: KeyStep[]): Promise<{ ok: boolean; reason: string }>; reconcilePending(): Promise<void> }`.
-  - `features/send.ts`: `sendFeature(deliverer)`: `POST /v1/sessions/:id/send {clientMsgId, text}` → the `SendRecord` minus `text` (200 delivered/pending, 409 refused, 502 failed, 400 bad id/size); `GET /v1/sends/:clientMsgId` → latest record minus `text`; `POST /v1/sessions/:id/keys {steps}` → `{ ok, reason }` (409 when refused).
-- Rules (SPEC 4.5): bad `clientMsgId` or `text` over `MAX_MESSAGE_BYTES` → 400, nothing recorded. Same id seen before: same session → return the existing record, never deliver twice; other session → `refused "this message id was already used for another session"`. One lock per session id (sends run one at a time). Route choice: omp with inbox → **inbox** (stage → record pending with `pid`,`file` → commit → `waitTaken(file, pendingAfterMs)` → delivered, else stays pending); omp without inbox → **tmux** only if `liveVoice === false`, else `refused "live voice is on and this omp has no inbox; turn live voice off or restart omp"`; plain tmux → **tmux** `sendText`; herdr → refused when `liveVoice === null` (`"cannot tell if live voice is on for this herdr pane"`) or `true`; else `prompt`, and a "showing a question" error → `refused "a question box is showing; use the key row"`. `keys` refused for an omp session unless `liveVoice === false`.
-- `reconcilePending()` runs at hostd start and every `scanIntervalMs` while anything is pending: inbox record whose file is gone → delivered; whose omp pid is dead → failed `"omp exited before reading the message"` and our `.msg` removed; tmux/herdr record still pending (hostd died mid-typing) → failed `"hostd stopped while typing; check the pane"`.
+  - `keys.ts`: `type KeyStep = { key: string } | { text: string }`; `parseSteps(keys: unknown): KeyStep[] | { error: string }` accepting an array of strings: `Tab Enter Esc Space BSpace Up Down Left Right Home End PageUp PageDown`, `C-<a-z>`, one printable character, and `text:<anything>`; 1 to 32 entries. `TMUX_KEYS: Record<string, string>` (`Esc → Escape`, others the same name). `HERDR_KEYS: Record<string, string>` (`Esc → esc`, `C-c → ctrl+c` verified; the rest lower-case names, **GUESS**, Needs Ben 2).
+  - `deliver.ts`: `type KeyResult = { status: "sent" | "refused" | "failed"; reason: string }`; `class Deliverer { constructor(cfg: HostdConfig, registry: Registry, sentLog: SentLog); send(sessionId: string, clientMsgId: string, text: string): Promise<SendRecord>; status(clientMsgId: string): SendRecord | undefined; keys(sessionId: string, steps: KeyStep[]): Promise<KeyResult>; reconcilePending(): Promise<void>; hasPending(): boolean }`. `send` expects an id that matches `CLIENT_MSG_ID` and text within `MAX_MESSAGE_BYTES` (the route checks both).
+  - `features/send.ts`: `sendFeature: FeatureFactory` (a plain factory like the others): it builds `new Deliverer(deps.config, deps.registry, deps.sentLog)`; its `start()` runs `await reconcilePending()` once, then a timer every `config.scanIntervalMs` that runs `reconcilePending()` while `hasPending()`; `stop()` clears the timer. Routes:
+    - `POST /v1/sessions/:id/send` body `{ "clientMsgId", "text" }` → the `SendRecord` without `text`; 200 `delivered`/`pending`, 409 `refused`, 502 `failed`; 400 `{error}` for a bad id, missing text, or text over `MAX_MESSAGE_BYTES` (nothing recorded).
+    - `GET /v1/sends/:clientMsgId` → latest record without `text`; 404 `{error: "no such message"}`.
+    - `POST /v1/sessions/:id/keys` body `{ "keys": ["Esc", "C-c", "y", "text:hello"] }` (SPEC 5.2) → `KeyResult`; 200 `sent`, 409 `refused`, 502 `failed`; 400 `{error}` when `keys` is missing or `parseSteps` fails.
 
-**Tests (`deliver.test.ts`, scratch tmux + fakes only):**
-1. `plain tmux send types the text and Enter`: delivered, `route "tmux"`, `capturePane` shows the text.
-2. `exactly once`: same `clientMsgId` twice → second returns the same record, text appears once; same id to another session → refused.
-3. `inbox route`: scratch omp session with `<inboxRoot>/<pid>/` created; a test watcher deletes `*.msg` → delivered, `route "inbox"`; with no watcher → pending after `pendingAfterMs`, then deleting the file and `reconcilePending()` → delivered.
-4. `omp without inbox is refused while live voice is on or unknown`: `setLiveVoicePids([pid])` → refused; `breakPactl()` → refused; neither → tmux delivered.
-5. `herdr`: idle agent → delivered via fake `herdr-prompts.log` `{target, text}`; `failHerdrPrompt("agent is showing a question")` → refused with the key-row reason; unplaced live-voice pid → refused.
-6. `crash recovery`: a hand-written pending tmux record in `sent.jsonl` → after `new Deliverer(...).reconcilePending()` it is failed with the "hostd stopped while typing" reason; a pending inbox record whose pid is dead → failed and the `.msg` removed.
-7. `HTTP`: `POST .../send` without `Origin` → 403; with 600 KiB text → 400; `GET /v1/sends/<id>` has no `text` key.
+**Rules (SPEC 4.5):**
+1. **Seen-before check under a per-id lock.** `send` first takes a lock keyed by `clientMsgId` (a `Map<string, Promise<unknown>>` chain), and does everything below inside it, so two simultaneous sends of one id run one after the other. Inside: `latest = sentLog.latest(clientMsgId)`.
+   - `latest` is `delivered` or `pending` for the same session → return `latest`; nothing is typed or written.
+   - `latest` is `delivered` or `pending` for another session → return `{ ...latest, sessionId, status: "refused", reason: "this message id was already used for another session", route: "none", text: "" }` **without** writing it to `sent.jsonl` (the original record must stay the latest one).
+   - `latest` is `refused` or `failed`, or there is none → deliver now (a retry is allowed after refused/failed).
+2. **One delivery at a time per session:** a second lock keyed by session id, taken inside the id lock.
+3. **Route choice** from `await registry.get(sessionId, 0)` (a fresh scan):
+   - no such session → append and return `refused "no such session"`, route `none`.
+   - omp with inbox → **inbox**: `stageInbox(inboxDir(cfg.inboxRoot, pid), id, text)` → append `pending` with `pid`, `file = staged.final` → `commitInbox` → `waitTaken(file, cfg.pendingAfterMs)` → true: append `delivered`; false: return the `pending` record (reconcile finishes it).
+   - omp without inbox → **tmux**, only when `liveVoice === false`; otherwise refused `"live voice is on and this omp has no inbox; turn live voice off or restart omp"` (`liveVoice` true) or `"cannot tell if live voice is on; refusing to type into this omp"` (null).
+   - plain tmux pane → **tmux**.
+   - tmux route: append `pending` (route `tmux`, no pid/file) → `sendText(cfg, where, text)` (Task 2: `send-keys -l` then `Enter`) → `delivered`, or `failed "tmux could not type: <error>"`.
+   - herdr → refused `"cannot tell if live voice is on for this herdr pane"` when `liveVoice === null`, refused `"live voice is on"` when true; refused `"the agent is showing a question; answer it with the key row first"` when `herdrStatus === "blocked"` (checked **before** any prompt call); else append `pending` (route `herdr`) → `prompt(cfg, pane, text)` → `delivered`, or `failed "herdr could not send: <herdrError text>"` (HTTP 502). The fake's `failHerdrPrompt(true)` is P1.3's forced failure.
+4. **`reconcilePending()`** (at hostd start through `Feature.start`, then on the timer) handles every `sentLog.pending()` record whose id is **not** in flight in this process (the Deliverer keeps an in-flight id set):
+   - inbox, with `part = <dir of file>/.<basename of file>.part`:
+     - `part` exists (hostd died between "record pending" and the rename): omp alive (`ompAlive(pid)`) → `commitInbox({ part, final: file })`, stays `pending`; omp dead → remove `part`, `failed "omp exited before reading the message"`.
+     - `file` exists: omp alive → stays `pending`; omp dead → remove `file`, `failed "omp exited before reading the message"`.
+     - neither exists → `delivered` (omp took it). This is the only case counted as delivered.
+   - tmux / herdr → `failed "hostd stopped while typing; check the pane"`.
+5. **`keys`**: no such session → refused `"no such session"`. tmux: an omp pane needs `liveVoice === false`, else refused `"live voice is on; keys would mix with it"` (true) or `"cannot tell if live voice is on, so keys are off"` (null); each step → `sendKeys(cfg, where, [TMUX_KEYS[key]])` or `sendKeys(cfg, where, ["-l", text])`; an error → `failed`. herdr: refused the same way when `liveVoice` is `null` or `true` (same as send); `text:` steps → refused `"text steps work on tmux panes only; use Send for herdr"`; key steps → `herdrSendKeys(cfg, pane, steps.map(HERDR_KEYS))`; error → `failed`. A blocked herdr agent accepts keys (that is how its question gets answered).
 
-**Tests (`keys.test.ts`):** `parseSteps(["Esc","C-c","y","text:hello"])` → 4 steps; `["Hyper"]` → error; 33 steps → error; tmux keys reach a scratch pane (`cat -v` shows `^C`); herdr keys appear in `herdr-keys.log` as `{target, keys}`; omp session with `liveVoice true` → refused.
+**Tests (`server/test/deliver.test.ts`, scratch tmux + fakes only):**
 
-**Live check, run exactly once (`server/test/live/live-inbox-once.ts`, SPEC 7, about 9 US cents, needs Ben's yes in the run report):** start one throwaway `omp --no-extensions -e omp-extension/live-inbox.ts --no-session --model haiku` in a scratch tmux socket under `s.tmuxTmp`, wait for `<inboxRoot>/<pid>/`, send `"reply with the word porthole"` through `Deliverer`, expect `delivered` within 30 s, kill only that omp pid, remove the scratch server. If it passes and `/home/cymatic/.omp/agent/extensions/live-inbox.ts` does not exist, install it with the command in `omp-extension/README.md`; if it exists and differs, stop and report (Needs Ben 4). Never rerun after a pass.
+```ts
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import path from "node:path";
+import type { HostdConfig } from "../src/config";
+import { Deliverer } from "../src/deliver/deliver";
+import { inboxDir, stageInbox } from "../src/deliver/inbox";
+import { SentLog } from "../src/deliver/sentlog";
+import { sendFeature } from "../src/features/send";
+import { sessionId } from "../src/sessions/ids";
+import { Registry } from "../src/sessions/registry";
+import { localHeaders, ompPane, pane, post, startTestHostd } from "./helpers/client";
+import { Scratch, waitFor } from "./helpers/scratch";
 
-Run: `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/deliver.test.ts server/test/keys.test.ts`, then once `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun run server/test/live/live-inbox-once.ts`
+let s: Scratch;
+let cfg: HostdConfig;
+let log: SentLog;
+let d: Deliverer;
+beforeEach(() => {
+  s = new Scratch();
+  cfg = s.config();
+  log = new SentLog(cfg.stateDir);
+  d = new Deliverer(cfg, new Registry(cfg), log);
+});
+afterEach(() => s.cleanup());
 
-Commit: `P1 task 10: delivery (inbox/tmux/herdr, exactly once, crash recovery), key row, one live-inbox run`
+const HERDR_ID = sessionId({ kind: "herdr", workspace: "w1", tab: "w1:t1", pane: "w1:p1" });
+function herdrAgent(status: string): void {
+  s.setHerdrAgents([{ terminal_id: "t1", agent_status: status, workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", focused: false, revision: 1, name: "rev" }]);
+}
+function herdrPrompts(): { target: string; text: string }[] {
+  return s.fakeFile("herdr-prompts.log").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+}
+const capture = (sock: string, session: string) => s.tmux(sock, "capture-pane", "-p", "-J", "-t", "=" + session + ":0.0");
+const count = (hay: string, needle: string) => hay.split(needle).length - 1;
+/** Deletes every *.msg in `dir` as omp's live-inbox would, and counts how many it saw. */
+function watcher(dir: string): { seen: string[]; stop(): void } {
+  const seen: string[] = [];
+  const t = setInterval(() => {
+    if (!existsSync(dir)) return;
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith(".msg")) {
+        seen.push(f);
+        rmSync(path.join(dir, f), { force: true });
+      }
+    }
+  }, 20);
+  return { seen, stop: () => clearInterval(t) };
+}
+async function deadPid(): Promise<number> {
+  const p = Bun.spawn(["true"]);
+  await p.exited;
+  return p.pid;
+}
+
+test("plain tmux send types the text and Enter once (P1.3 b)", async () => {
+  const p = await pane(s, "work", "cat > /dev/null");
+  const r = await d.send(p.id, "m-tmux-1", "hello porthole");
+  expect([r.status, r.route]).toEqual(["delivered", "tmux"]);
+  await waitFor(() => capture(p.socket, "work").includes("hello porthole"));
+  const again = await d.send(p.id, "m-tmux-1", "hello porthole");
+  expect(again).toEqual(r);
+  await Bun.sleep(300);
+  expect(count(capture(p.socket, "work"), "hello porthole")).toBe(1);
+});
+
+test("multi-line text arrives as lines, then one Enter", async () => {
+  const p = await pane(s, "work", "cat > /dev/null");
+  const r = await d.send(p.id, "m-lines", "line one\nline two\nline three");
+  expect(r.status).toBe("delivered");
+  await waitFor(() => /line one\nline two\nline three/.test(capture(p.socket, "work")));
+});
+
+test("the same id sent twice at the same moment is delivered once", async () => {
+  const p = await pane(s, "work", "cat > /dev/null");
+  const [a, b] = await Promise.all([d.send(p.id, "m-race", "race text"), d.send(p.id, "m-race", "race text")]);
+  expect(a.status).toBe("delivered");
+  expect(b).toEqual(a);
+  await Bun.sleep(300);
+  expect(count(capture(p.socket, "work"), "race text")).toBe(1);
+  herdrAgent("idle");
+  await Promise.all([d.send(HERDR_ID, "h-race", "once"), d.send(HERDR_ID, "h-race", "once")]);
+  expect(herdrPrompts()).toEqual([{ target: "w1:p1", text: "once" }]);
+});
+
+test("an id used for one session is refused for another, and the first record stays", async () => {
+  const p1 = await pane(s, "one", "cat > /dev/null");
+  const p2 = await pane(s, "two", "cat > /dev/null", p1.socket);
+  const first = await d.send(p1.id, "m-shared", "first");
+  const other = await d.send(p2.id, "m-shared", "first");
+  expect([other.status, other.reason]).toEqual(["refused", "this message id was already used for another session"]);
+  expect(d.status("m-shared")).toEqual(first);
+  expect(capture(p2.socket, "two")).not.toContain("first");
+});
+
+test("a refused id can be retried and is then delivered once", async () => {
+  herdrAgent("idle");
+  s.setLiveVoicePids([99999]);
+  const refused = await d.send(HERDR_ID, "m-retry", "after the retry");
+  expect([refused.status, refused.reason]).toEqual(["refused", "cannot tell if live voice is on for this herdr pane"]);
+  s.setLiveVoicePids([]);
+  const ok = await d.send(HERDR_ID, "m-retry", "after the retry");
+  expect(ok.status).toBe("delivered");
+  expect(await d.send(HERDR_ID, "m-retry", "after the retry")).toEqual(ok);
+  expect(herdrPrompts()).toEqual([{ target: "w1:p1", text: "after the retry" }]);
+});
+
+test("a failed id can be retried", async () => {
+  herdrAgent("idle");
+  s.failHerdrPrompt(true);
+  expect((await d.send(HERDR_ID, "m-fail-retry", "x")).status).toBe("failed");
+  s.failHerdrPrompt(false);
+  expect((await d.send(HERDR_ID, "m-fail-retry", "x")).status).toBe("delivered");
+});
+
+test("inbox route: delivered when omp takes the file, exactly once for the same id (P1.3 a)", async () => {
+  const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  const dir = inboxDir(cfg.inboxRoot, p.pid);
+  mkdirSync(dir, { recursive: true });
+  const w = watcher(dir);
+  try {
+    const r = await d.send(p.id, "m-inbox", "through the inbox");
+    expect([r.status, r.route, r.pid]).toEqual(["delivered", "inbox", p.pid]);
+    expect(await d.send(p.id, "m-inbox", "through the inbox")).toEqual(r);
+    await Bun.sleep(200);
+    expect(w.seen).toEqual(["m-inbox.msg"]);
+  } finally {
+    w.stop();
+  }
+});
+
+test("inbox route without a reader stays pending, then reconcile marks it delivered", async () => {
+  const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  const dir = inboxDir(cfg.inboxRoot, p.pid);
+  mkdirSync(dir, { recursive: true });
+  const r = await d.send(p.id, "m-wait", "nobody reads");
+  expect(r.status).toBe("pending");
+  expect(existsSync(path.join(dir, "m-wait.msg"))).toBe(true);
+  expect(d.hasPending()).toBe(true);
+  rmSync(path.join(dir, "m-wait.msg"));
+  await d.reconcilePending();
+  expect(d.status("m-wait")?.status).toBe("delivered");
+  expect(d.hasPending()).toBe(false);
+});
+
+test("omp without an inbox is refused while live voice is on or unknown", async () => {
+  const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  s.setLiveVoicePids([p.pid]);
+  expect((await d.send(p.id, "m-lv-1", "x")).reason).toBe("live voice is on and this omp has no inbox; turn live voice off or restart omp");
+  s.setLiveVoicePids([]);
+  s.breakPactl(true);
+  expect((await d.send(p.id, "m-lv-2", "x")).reason).toBe("cannot tell if live voice is on; refusing to type into this omp");
+  s.breakPactl(false);
+  const ok = await d.send(p.id, "m-lv-3", "x");
+  expect([ok.status, ok.route]).toEqual(["delivered", "tmux"]);
+});
+
+test("herdr: delivered when idle, refused on a question, failed on a forced failure (P1.3 c)", async () => {
+  herdrAgent("idle");
+  const ok = await d.send(HERDR_ID, "h-1", "hi herdr");
+  expect([ok.status, ok.route]).toEqual(["delivered", "herdr"]);
+  expect(herdrPrompts()).toEqual([{ target: "w1:p1", text: "hi herdr" }]);
+  herdrAgent("blocked");
+  const q = await d.send(HERDR_ID, "h-2", "should not go");
+  expect([q.status, q.reason]).toEqual(["refused", "the agent is showing a question; answer it with the key row first"]);
+  expect(herdrPrompts().length).toBe(1);
+  herdrAgent("idle");
+  s.failHerdrPrompt(true);
+  const f = await d.send(HERDR_ID, "h-3", "forced");
+  expect(f.status).toBe("failed");
+  expect(f.reason).toBe("herdr could not send: fake failure");
+  s.setLiveVoicePids([99999]);
+  expect((await d.send(HERDR_ID, "h-4", "x")).reason).toBe("cannot tell if live voice is on for this herdr pane");
+});
+
+test("crash recovery: half-typed tmux/herdr records fail, inbox records follow the files", async () => {
+  const omp = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  const live = inboxDir(cfg.inboxRoot, omp.pid);
+  mkdirSync(live, { recursive: true });
+  const dead = await deadPid();
+  const deadDir = inboxDir(cfg.inboxRoot, dead);
+  mkdirSync(deadDir, { recursive: true });
+  const base = { reason: "", text: "t", sessionId: omp.id } as const;
+  log.append({ ...base, clientMsgId: "c-tmux", status: "pending", route: "tmux", pid: null, file: null });
+  log.append({ ...base, clientMsgId: "c-herdr", status: "pending", route: "herdr", pid: null, file: null });
+  // .part only, omp alive: hostd died before the rename -> commit it, stay pending.
+  const partLive = stageInbox(live, "c-part-live", "t");
+  log.append({ ...base, clientMsgId: "c-part-live", status: "pending", route: "inbox", pid: omp.pid, file: partLive.final });
+  // .part only, omp dead -> failed, .part removed.
+  const partDead = stageInbox(deadDir, "c-part-dead", "t");
+  log.append({ ...base, clientMsgId: "c-part-dead", status: "pending", route: "inbox", pid: dead, file: partDead.final });
+  // .msg present, omp dead -> failed, .msg removed.
+  const msgDead = stageInbox(deadDir, "c-msg-dead", "t");
+  Bun.spawnSync(["mv", msgDead.part, msgDead.final]);
+  log.append({ ...base, clientMsgId: "c-msg-dead", status: "pending", route: "inbox", pid: dead, file: msgDead.final });
+  // neither file -> delivered.
+  log.append({ ...base, clientMsgId: "c-gone", status: "pending", route: "inbox", pid: omp.pid, file: path.join(live, "c-gone.msg") });
+
+  const fresh = new Deliverer(cfg, new Registry(cfg), new SentLog(cfg.stateDir));
+  await fresh.reconcilePending();
+  const st = (id: string) => [fresh.status(id)?.status, fresh.status(id)?.reason];
+  expect(st("c-tmux")).toEqual(["failed", "hostd stopped while typing; check the pane"]);
+  expect(st("c-herdr")).toEqual(["failed", "hostd stopped while typing; check the pane"]);
+  expect(st("c-part-live")).toEqual(["pending", ""]);
+  expect([existsSync(partLive.part), existsSync(partLive.final)]).toEqual([false, true]);
+  expect(st("c-part-dead")).toEqual(["failed", "omp exited before reading the message"]);
+  expect(existsSync(partDead.part)).toBe(false);
+  expect(st("c-msg-dead")).toEqual(["failed", "omp exited before reading the message"]);
+  expect(existsSync(msgDead.final)).toBe(false);
+  expect(st("c-gone")).toEqual(["delivered", ""]);
+  rmSync(partLive.final);
+  await fresh.reconcilePending();
+  expect(st("c-part-live")).toEqual(["delivered", ""]);
+});
+
+test("HTTP: hostd start reconciles, checks bodies, and never returns text", async () => {
+  const p = await pane(s, "work", "cat > /dev/null");
+  log.append({ clientMsgId: "boot-1", sessionId: p.id, status: "pending", reason: "", route: "tmux", text: "t", pid: null, file: null });
+  const h = await startTestHostd(s, [sendFeature]);
+  try {
+    expect(new SentLog(cfg.stateDir).latest("boot-1")?.status).toBe("failed");
+    const url = "/v1/sessions/" + encodeURIComponent(p.id);
+    const noOrigin = await fetch(h.url + url + "/send", { method: "POST", headers: localHeaders(h), body: JSON.stringify({ clientMsgId: "h-a", text: "x" }) });
+    expect(noOrigin.status).toBe(403);
+    expect((await post(h, url + "/send", { clientMsgId: "bad id!", text: "x" })).status).toBe(400);
+    expect((await post(h, url + "/send", { clientMsgId: "h-big", text: "x".repeat(600 * 1024) })).status).toBe(400);
+    expect(new SentLog(cfg.stateDir).latest("h-big")).toBeUndefined();
+    const sent = await post(h, url + "/send", { clientMsgId: "h-ok", text: "over http" });
+    expect(sent.status).toBe(200);
+    const body = (await sent.json()) as Record<string, unknown>;
+    expect(body.status).toBe("delivered");
+    expect("text" in body).toBe(false);
+    const got = await fetch(h.url + "/v1/sends/h-ok", { headers: localHeaders(h) });
+    expect("text" in ((await got.json()) as object)).toBe(false);
+    expect((await fetch(h.url + "/v1/sends/nope", { headers: localHeaders(h) })).status).toBe(404);
+    expect((await post(h, url + "/keys", { keys: ["Esc"] })).status).toBe(200);
+    expect((await post(h, url + "/keys", { steps: ["Esc"] })).status).toBe(400);
+    herdrAgent("blocked");
+    expect((await post(h, "/v1/sessions/" + encodeURIComponent(HERDR_ID) + "/send", { clientMsgId: "h-q", text: "x" })).status).toBe(409);
+    herdrAgent("idle");
+    s.failHerdrPrompt(true);
+    expect((await post(h, "/v1/sessions/" + encodeURIComponent(HERDR_ID) + "/send", { clientMsgId: "h-f", text: "x" })).status).toBe(502);
+  } finally {
+    await h.stop();
+  }
+});
+```
+
+**Tests (`server/test/keys.test.ts`):**
+
+```ts
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { Deliverer } from "../src/deliver/deliver";
+import { parseSteps } from "../src/deliver/keys";
+import { SentLog } from "../src/deliver/sentlog";
+import { sessionId } from "../src/sessions/ids";
+import { Registry } from "../src/sessions/registry";
+import { ompPane, pane } from "./helpers/client";
+import { Scratch, waitFor } from "./helpers/scratch";
+
+let s: Scratch;
+let d: Deliverer;
+beforeEach(() => {
+  s = new Scratch();
+  const cfg = s.config();
+  d = new Deliverer(cfg, new Registry(cfg), new SentLog(cfg.stateDir));
+});
+afterEach(() => s.cleanup());
+
+const HERDR_ID = sessionId({ kind: "herdr", workspace: "w1", tab: "w1:t1", pane: "w1:p1" });
+function herdrAgent(status: string): void {
+  s.setHerdrAgents([{ terminal_id: "t1", agent_status: status, workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", focused: false, revision: 1, name: "rev" }]);
+}
+
+test("parseSteps accepts the key row and refuses anything else", () => {
+  expect(parseSteps(["Esc", "C-c", "y", "text:hello"])).toEqual([{ key: "Esc" }, { key: "C-c" }, { key: "y" }, { text: "hello" }]);
+  expect("error" in (parseSteps(["Hyper"]) as object)).toBe(true);
+  expect("error" in (parseSteps([]) as object)).toBe(true);
+  expect("error" in (parseSteps(Array(33).fill("Tab")) as object)).toBe(true);
+  expect("error" in (parseSteps("Esc") as object)).toBe(true);
+});
+
+test("tmux keys reach a scratch pane", async () => {
+  const p = await pane(s, "work", "cat -v");
+  const r = await d.keys(p.id, parseSteps(["text:abc", "C-a", "Enter"]) as never);
+  expect(r).toEqual({ status: "sent", reason: "" });
+  await waitFor(() => s.tmux(p.socket, "capture-pane", "-p", "-t", "=work:0.0").includes("abc^A"));
+});
+
+test("herdr keys appear in the fake's log, even while the agent asks a question", async () => {
+  herdrAgent("blocked");
+  expect(await d.keys(HERDR_ID, [{ key: "Esc" }])).toEqual({ status: "sent", reason: "" });
+  const last = s.fakeFile("herdr-keys.log").trim().split("\n").pop() ?? "";
+  expect(JSON.parse(last)).toEqual({ target: "w1:p1", keys: ["esc"] });
+  expect((await d.keys(HERDR_ID, [{ text: "hi" }])).reason).toBe("text steps work on tmux panes only; use Send for herdr");
+});
+
+test("keys are refused while live voice is on or unknown", async () => {
+  const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
+  s.setLiveVoicePids([p.pid]);
+  expect(await d.keys(p.id, [{ key: "Esc" }])).toEqual({ status: "refused", reason: "live voice is on; keys would mix with it" });
+  herdrAgent("idle");
+  expect((await d.keys(HERDR_ID, [{ key: "Esc" }])).status).toBe("sent");
+  s.setLiveVoicePids([99999]);
+  expect(await d.keys(HERDR_ID, [{ key: "Esc" }])).toEqual({ status: "refused", reason: "cannot tell if live voice is on, so keys are off" });
+  s.setLiveVoicePids([]);
+  s.breakPactl(true);
+  expect((await d.keys(HERDR_ID, [{ key: "Esc" }])).status).toBe("refused");
+  expect((await d.keys(p.id, [{ key: "Esc" }])).status).toBe("refused");
+});
+```
+
+Run: `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/deliver.test.ts server/test/keys.test.ts`
+Expected before implementing: FAIL, `Cannot find module '../src/deliver/deliver'`. After: PASS, 16 tests.
+
+Commit: `P1 task 10: delivery (inbox/tmux/herdr, exactly once, retry, crash recovery), key row`
+
+**Live check, run exactly once by the orchestrator (`server/test/live/live-inbox-once.ts`, SPEC 7, one cheap model reply, about 9 US cents, needs Ben's yes in the run report).** The real omp's live-inbox writes `$XDG_RUNTIME_DIR/omp-inbox/<pid>`, so the throwaway omp is started with `XDG_RUNTIME_DIR` set to the scratch run folder and hostd's `inboxRoot` points at `<that folder>/omp-inbox`; nothing touches `/run/user/1000`.
+
+```ts
+// One live check of the inbox route against a real, throwaway omp (P1.3 a). Run once; never rerun,
+// whether it passes or fails. Exit 0 = pass, 1 = fail (stop, report to Ben), 2 = could not start.
+import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { Deliverer } from "../../src/deliver/deliver";
+import { inboxDir } from "../../src/deliver/inbox";
+import { SentLog } from "../../src/deliver/sentlog";
+import { Registry } from "../../src/sessions/registry";
+import { Scratch, waitFor } from "../helpers/scratch";
+
+const repo = path.join(import.meta.dir, "..", "..", "..");
+const omp = Bun.which("omp");
+if (!omp) {
+  console.log("CANNOT RUN: omp is not on PATH");
+  process.exit(2);
+}
+const s = new Scratch();
+mkdirSync(s.runtimeDir, { recursive: true, mode: 0o700 });
+const cfg = s.config({ inboxRoot: path.join(s.runtimeDir, "omp-inbox"), pendingAfterMs: 30_000 });
+const registry = new Registry(cfg);
+const log = new SentLog(cfg.stateDir);
+const d = new Deliverer(cfg, registry, log);
+let code = 1;
+let ompPid = 0;
+try {
+  const cmd = "XDG_RUNTIME_DIR='" + s.runtimeDir + "' '" + omp + "' --no-extensions -e '" + path.join(repo, "omp-extension", "live-inbox.ts") + "' --no-session --model haiku";
+  s.newTmuxServer("live-inbox", cmd, s.root);
+  let id = "";
+  await waitFor(async () => {
+    const t = await registry.scan();
+    const found = t.sessions.find((x) => x.omp?.inbox);
+    if (found?.omp) {
+      id = found.id;
+      ompPid = found.omp.pid;
+    }
+    return id !== "";
+  }, 60_000, 500);
+  const dir = inboxDir(cfg.inboxRoot, ompPid);
+  console.log("omp pid " + ompPid + ", inbox " + dir);
+  const first = await d.send(id, "porthole-live-1", "reply with the word porthole");
+  console.log("first send: " + first.status + " " + first.reason);
+  const linesBefore = readFileSync(log.file, "utf8").split("\n").filter(Boolean).length;
+  const second = await d.send(id, "porthole-live-1", "reply with the word porthole");
+  await Bun.sleep(2000);
+  const leftover = readdirSync(dir).filter((f) => f.includes("porthole-live-1"));
+  const linesAfter = readFileSync(log.file, "utf8").split("\n").filter(Boolean).length;
+  console.log("second send: " + second.status + ", files left: " + JSON.stringify(leftover) + ", new sent.jsonl lines: " + (linesAfter - linesBefore));
+  const pass = first.status === "delivered" && second.at === first.at && leftover.length === 0 && linesAfter === linesBefore;
+  console.log(pass ? "PASS" : "FAIL: stop, do not rerun, report to Ben");
+  code = pass ? 0 : 1;
+} catch (e) {
+  console.log("FAIL: " + (e instanceof Error ? e.message : String(e)) + " (stop, do not rerun, report to Ben)");
+} finally {
+  if (ompPid > 0 && existsSync("/proc/" + ompPid)) process.kill(ompPid, "SIGTERM");
+  s.cleanup();
+}
+process.exit(code);
+```
+
+Orchestrator steps for this run (once, after the full `bun test server/test` passed and Ben said yes):
+- [ ] `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun run server/test/live/live-inbox-once.ts`. Record its output in the run report. It kills only the omp pid it found and removes only its scratch tmux server.
+- [ ] Exit 1 or 2 → **stop**: no rerun, no install, put the output under Needs Ben.
+- [ ] Exit 0 → if `/home/cymatic/.omp/agent/extensions/live-inbox.ts` does not exist, install it with the command in `omp-extension/README.md`; if it exists and differs from `omp-extension/live-inbox.ts`, do not overwrite it, put it under Needs Ben 4. Either way, the same turn's report to Ben says what was installed (or not) and where.
 
 ---
 
@@ -2343,62 +3241,477 @@ Commit: `P1 task 10: delivery (inbox/tmux/herdr, exactly once, crash recovery), 
 - Test: `server/test/pty.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2 (`tmuxTarget`, `listClients`, `detachClient`), Task 8.
-- Produces: `ptyFeature: FeatureFactory`, channel `/v1/sessions/:id/pty?cols=<20..400>&rows=<5..200>`:
-  - tmux session → `Bun.spawn([tmux, "-S", socket, "attach-session", "-t", "=" + session], { terminal: { cols, rows, data(_t, bytes) { ws.send(bytes) } }, env: cleanEnv() })` (Verified facts 6: Bun 1.3.14 `terminal` option). Binary frames in → `proc.terminal.write` when writable; text frame `{ type: "resize", cols, rows }` → `proc.terminal.resize`.
-  - Writable only when the session is not omp, or omp with `liveVoice === false`; otherwise first message `{ type: "readonly", reason: "live voice is on; typing here would mix with it" }` and input frames are dropped.
-  - herdr session → `{ type: "readonly", reason: "herdr terminals are read-only in P1" }` then screen text every second from `readScreen` (Needs Ben 1).
-  - On close: find our client with `listClients` where `pid === proc.pid`, `detachClient` that tty only, then kill our own child pid after 2 s if still alive. Never detach any other client.
+- Consumes: Task 1 (`cleanEnv`, `Scratch`, `waitFor`), Task 2 (`socketPath`, `tmuxTarget`, `listClients`, `detachClient`, `readScreen`), Task 8 (`FeatureFactory`, `FeatureDeps`, `Registry`, `client.ts`).
+- Produces: `ptyFeature: FeatureFactory`, channel `/v1/sessions/:id/pty?cols=<20..400>&rows=<5..200>` (defaults 80×24; out of range → clamped):
+  - tmux session → `Bun.spawn([cfg.bin.tmux, "-S", socketPath(cfg, where.socket), "attach-session", "-t", "=" + where.session], { terminal: { cols, rows, data(_t, bytes) { ws.send(bytes) } }, env: cleanEnv() })` (Verified facts 6: Bun 1.4.2 `terminal` option). Text frame `{ "type": "resize", "cols", "rows" }` → `proc.terminal.resize(cols, rows)`.
+  - **Input is checked on every frame (SPEC 4.3).** Each binary input frame goes into one ordered queue per socket; for each frame, `await deps.registry.get(id, cfg.scanIntervalMs)` and write it with `proc.terminal.write(bytes)` only when the session's `liveVoice === false`. When `liveVoice` is `true` or `null`, the frame is dropped and the socket turns read-only for good (sticky until it closes): one `{ "type": "readonly", "reason" }` message, reason `"live voice is on; typing here would mix with it"` (true) or `"cannot tell if live voice is on, so typing is off"` (null). The feature also subscribes with `registry.onChange` while any pty socket is open, so the `readonly` message arrives as soon as a scan sees live voice, even before the next keystroke. The same check runs at open: not writable → `readonly` is the first message (output still streams).
+  - herdr session → first message `{ "type": "readonly", "reason": "herdr terminals are read-only in P1" }`, then `{ "type": "screen", "text" }` every second from `readScreen(cfg, pane, 200)` (Needs Ben 1). No session → `{ "type": "error", "error": "no such session" }` and close 1000.
+  - On close: find our client with `listClients(cfg, where.socket)` where `pid === proc.pid`, `detachClient(cfg, where.socket, tty)` for that tty only, then kill our own child pid (`proc.kill()`) after 2 s if still alive. Never detach any other client.
 
-**Tests (`pty.test.ts`):**
-1. `attach, type, see the echo`: scratch `bash` session; send `"echo pty-ok\r"` as binary → received bytes contain `pty-ok`.
-2. `resize`: `{type:"resize",cols:100,rows:30}` → `tmux display -p '#{client_width}'` for our client prints `100`.
-3. `close detaches only our client`: a second scratch client attached with `tmux attach` in its own scratch pty stays in `listClients` after our socket closes; ours is gone within 3 s.
-4. `live voice makes it read-only`: omp session with `setLiveVoicePids([pid])` → first message `readonly`, typed bytes never reach the pane.
-5. `herdr is read-only`: → `readonly` then a screen frame containing the fake screen text.
+**Tests (`server/test/pty.test.ts`):**
+
+```ts
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { ptyFeature } from "../src/features/pty";
+import { cleanEnv } from "../src/exec";
+import { sessionId } from "../src/sessions/ids";
+import { listClients, socketPath } from "../src/sessions/tmux";
+import { openWs, pane, startTestHostd, type TestHostd } from "./helpers/client";
+import { Scratch, waitFor } from "./helpers/scratch";
+
+let s: Scratch;
+let h: TestHostd;
+beforeEach(async () => {
+  s = new Scratch();
+  h = await startTestHostd(s, [ptyFeature]);
+});
+afterEach(async () => {
+  await h.stop();
+  s.cleanup();
+});
+
+const enc = new TextEncoder();
+const capture = (sock: string, session: string) => s.tmux(sock, "capture-pane", "-p", "-t", "=" + session + ":0.0");
+
+test("attach, type, see the echo", async () => {
+  const p = await pane(s, "work", "/bin/sh");
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty?cols=100&rows=30");
+  ws.send(enc.encode("echo pty-$((40+2))\r"));
+  await waitFor(() => ws.output().includes("pty-42"), 5000);
+  ws.close();
+  expect(await ws.closed).toBe(1000);
+});
+
+test("resize changes our own client's width", async () => {
+  const p = await pane(s, "work", "/bin/sh");
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty?cols=80&rows=24");
+  await waitFor(async () => (await listClients(h.config, p.socket)).length === 1);
+  const ours = (await listClients(h.config, p.socket))[0];
+  ws.send(JSON.stringify({ type: "resize", cols: 100, rows: 30 }));
+  await waitFor(() => s.tmux(p.socket, "display", "-p", "-c", ours.tty, "#{client_width}").trim() === "100");
+  ws.close();
+});
+
+test("close detaches only our client", async () => {
+  const p = await pane(s, "work", "/bin/sh");
+  const other = Bun.spawn([h.config.bin.tmux, "-S", socketPath(h.config, p.socket), "attach-session", "-t", "=work"], {
+    terminal: { cols: 80, rows: 24, data() {} },
+    env: cleanEnv(),
+  });
+  try {
+    await waitFor(async () => (await listClients(h.config, p.socket)).some((c) => c.pid === other.pid));
+    const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
+    await waitFor(async () => (await listClients(h.config, p.socket)).length === 2);
+    ws.close();
+    await waitFor(async () => {
+      const left = await listClients(h.config, p.socket);
+      return left.length === 1 && left[0].pid === other.pid;
+    }, 3000);
+  } finally {
+    other.kill();
+  }
+});
+
+test("live voice at open makes it read-only and typed bytes never reach the pane", async () => {
+  const p = await pane(s, "work", "cat");
+  s.setLiveVoicePids([p.pid]);
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
+  expect((await ws.next("readonly", 3000)).reason).toBe("live voice is on; typing here would mix with it");
+  ws.send(enc.encode("never-typed\r"));
+  await Bun.sleep(500);
+  expect(capture(p.socket, "work")).not.toContain("never-typed");
+  ws.close();
+});
+
+test("live voice turning on mid-session drops input from then on", async () => {
+  const p = await pane(s, "work", "cat");
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
+  ws.send(enc.encode("before-voice\r"));
+  await waitFor(() => capture(p.socket, "work").includes("before-voice"));
+  expect(ws.seen.some((m) => m.type === "readonly")).toBe(false);
+  s.setLiveVoicePids([p.pid]);
+  await Bun.sleep(h.config.scanIntervalMs + 100);
+  ws.send(enc.encode("after-voice\r"));
+  expect((await ws.next("readonly", 3000)).reason).toBe("live voice is on; typing here would mix with it");
+  await Bun.sleep(500);
+  expect(capture(p.socket, "work")).not.toContain("after-voice");
+  s.setLiveVoicePids([]);
+  await Bun.sleep(h.config.scanIntervalMs + 100);
+  ws.send(enc.encode("still-dropped\r"));
+  await Bun.sleep(500);
+  expect(capture(p.socket, "work")).not.toContain("still-dropped");
+  ws.close();
+});
+
+test("unknown live voice (pactl failing) is read-only too", async () => {
+  const p = await pane(s, "work", "cat");
+  s.breakPactl(true);
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
+  expect((await ws.next("readonly", 3000)).reason).toBe("cannot tell if live voice is on, so typing is off");
+  ws.close();
+});
+
+test("herdr is read-only and streams the screen", async () => {
+  s.setHerdrAgents([{ terminal_id: "t1", agent_status: "idle", workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", focused: false, revision: 1, name: "rev" }]);
+  s.setHerdrScreen("w1:p1", "hello herdr\n");
+  const id = sessionId({ kind: "herdr", workspace: "w1", tab: "w1:t1", pane: "w1:p1" });
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(id) + "/pty");
+  expect((await ws.next("readonly", 3000)).reason).toBe("herdr terminals are read-only in P1");
+  expect((await ws.next("screen", 3000)).text).toContain("hello herdr");
+  ws.close();
+});
+
+test("unknown session gets an error and a clean close", async () => {
+  const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent("tmux:nope:nope:0.0") + "/pty");
+  expect((await ws.next("error", 3000)).error).toBe("no such session");
+  expect(await ws.closed).toBe(1000);
+});
+```
 
 Run: `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/pty.test.ts`
+Expected before implementing: FAIL, `Cannot find module '../src/features/pty'`. After: PASS, 8 tests.
 
-Commit: `P1 task 11: terminal channel (attach own tmux client, resize, read-only when unsafe)`
+Commit: `P1 task 11: terminal channel (attach own tmux client, resize, live voice checked on every frame)`
 
 ---
 
 ### Task 12: Entry point, service, install, `tailscale serve`, README, auth live check
 
 **Files (owned):**
-- Create: `server/src/main.ts`, `deploy/porthole.service`, `deploy/install.sh`, `deploy/serve.ts`, `server/test/live/auth-live.ts`
-- Modify: `README.md` (sections "Running hostd" and "Security limit of 127.0.0.1 mode")
+- Create: `server/src/main.ts`, `deploy/porthole.service`, `deploy/install.sh`, `deploy/serve.ts`, `server/test/live/auth-live.ts`, `README.md` (the repo has no README yet)
 - Test: `server/test/main.test.ts`
 
 **Interfaces:**
-- `main.ts` (`if (import.meta.main)`): `bun run server/src/main.ts init-config` writes a default `~/.config/porthole/hostd.json` (0600, refuses to overwrite) from `defaultConfig()`; plain run loads `PORTHOLE_CONFIG` or the default path, calls `createHostd(cfg, [machineFeature, sessionsFeature, chatFeature, sendFeature(deliverer), ptyFeature])`, runs `reconcilePending()`, logs one line `porthole hostd <version> on 127.0.0.1:<port>`, stops cleanly on SIGTERM.
-- `deploy/porthole.service`: user unit, `ExecStart=/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun run %h/.local/share/porthole/hostd/current/server/src/main.ts`, `Restart=on-failure`, `RestartSec=5`, `UMask=0077`, `WantedBy=default.target`.
-- `deploy/install.sh`: `git archive HEAD` into `~/.local/share/porthole/hostd/<short sha>/`, repoint the `current` symlink, `install -m 0644` the unit into `~/.config/systemd/user/`, `systemctl --user daemon-reload`, `systemctl --user enable --now porthole.service` (the plan's executor asks Ben before the `enable --now` step, SPEC 7).
-- `deploy/serve.ts`: reads `tailscale serve status --json`; refuses if 443 or 8443 already serve something other than Porthole; otherwise `tailscale serve --bg --https=443 http://127.0.0.1:8797` (control room, P2 fills it) and `--https=8443 http://127.0.0.1:8798` (preview). Prints what it did.
-- `README.md`: how to install/run; the limit: "hostd listens on 127.0.0.1, so any program running as cymatic or root on this machine can reach it with the local token file; Unix-socket mode with peer checks is not possible in Bun 1.3.14 (Verified facts 5)".
-- `auth-live.ts`, run once by hand after `serve.ts` (SPEC P1.5): from this machine through the tailnet URL, `GET /v1/machine` with `X-Porthole: 1` → 200 and `you.device` = this node; same with a spoofed first `X-Forwarded-For` → still this node; without `X-Porthole` → 403; `POST` with `Origin: https://evil.example` → 403; WebSocket to `/v1/events` from the `:8443` origin → refused.
+- Consumes: Task 1 (`defaultConfig`, `loadConfig`, `writeInitialConfig`, `selfFromTailscale`, `run`, `cleanEnv`, json helpers, `Scratch`), Task 5 (`localTokenPath`), Task 8 (`createHostd`, `machineFeature`, `sessionsFeature`, `VERSION`), Task 9 (`chatFeature`), Task 10 (`sendFeature`), Task 11 (`ptyFeature`).
+- Produces:
+  - `main.ts`: `FEATURES: FeatureFactory[] = [machineFeature, sessionsFeature, chatFeature, sendFeature, ptyFeature]`; `configPath(env: Record<string, string | undefined> = process.env): string` → `env.PORTHOLE_CONFIG` when set, else `<env.HOME>/.config/porthole/hostd.json`. Under `if (import.meta.main)` only (importing `main.ts` starts nothing):
+    - `bun run server/src/main.ts init-config [--tailscale <path>]` → `writeInitialConfig(configPath(), <path> ?? defaultConfig().bin.tailscale)`, prints its message, exit 0 (exit 1 with the error text on failure). Tests always pass `--tailscale` with the fake and set `PORTHOLE_CONFIG`, so they never write `~/.config/porthole/hostd.json` and never run the real `/usr/bin/tailscale`.
+    - `bun run server/src/main.ts` → `loadConfig(configPath())`, `await createHostd(cfg, FEATURES)` (which runs every `Feature.start`, so `reconcilePending` runs inside hostd, Task 10), prints exactly one line `porthole hostd <VERSION> on 127.0.0.1:<port>`, and on SIGTERM or SIGINT `await h.stop()` then exits 0.
+  - `deploy/serve.ts`: `planServe(status: unknown, host: string): { add: string[][]; refuse: string }`, a pure function; run as a script (`import.meta.main`) it reads `tailscale serve status --json`, prints it as `before: <json>`, takes `host` from `selfFromTailscale`, prints and exits 1 when `refuse` is non-empty, otherwise runs each `add` argv with the configured tailscale binary, then prints `after: <json>`. It only ever adds; the words `reset` and `off` appear nowhere in the file (comments included), which `main.test.ts` checks. The status JSON shape (`TCP` port → `{HTTPS}`, `Web` `"<host>:<port>"` → `{Handlers: {"/": {Proxy}}}`, `{}` when nothing is served) is a **GUESS** from tailscale's serve config format; serve.ts prints the raw status first so the orchestrator sees the real shape before anything changes. Rules: for each of 443 → `http://127.0.0.1:8797` (control room; P2 fills it) and 8443 → `http://127.0.0.1:8798` (preview): already proxied to exactly that target → nothing; the port held by anything else → `refuse` naming the port and `add: []` (no change at all); free → `["serve", "--bg", "--https=<port>", "<target>"]`.
 
-**Tests (`main.test.ts`):** `init-config` writes a 0600 file and refuses a second time; a started `main.ts` with a scratch config answers `/v1/machine` with the local token and exits 0 on SIGTERM (exact child PID); `porthole.service` contains `UMask=0077` and `Restart=on-failure`; `install.sh` and `serve.ts` contain no `sudo`.
+`deploy/porthole.service`:
+
+```ini
+[Unit]
+Description=Porthole hostd (phone access to this machine's agent sessions)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun run %h/.local/share/porthole/hostd/current/server/src/main.ts
+Restart=on-failure
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target
+```
+
+`deploy/install.sh`:
+
+```bash
+#!/usr/bin/env bash
+# Install the committed HEAD of this repo as the porthole user service. No sudo (SPEC 7).
+#   deploy/install.sh            snapshot + unit file + daemon-reload
+#   deploy/install.sh --enable   the same, then enable and start the service (only after Ben's yes)
+set -euo pipefail
+repo="$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)"
+sha="$(git -C "$repo" rev-parse --short HEAD)"
+root="$HOME/.local/share/porthole/hostd"
+mkdir -p "$root/$sha"
+git -C "$repo" archive HEAD | tar -x -C "$root/$sha"
+ln -sfn "$root/$sha" "$root/current"
+mkdir -p "$HOME/.config/systemd/user"
+install -m 0644 "$repo/deploy/porthole.service" "$HOME/.config/systemd/user/porthole.service"
+systemctl --user daemon-reload
+if [ "${1:-}" = "--enable" ]; then
+  systemctl --user enable --now porthole.service
+fi
+echo "installed $sha into $root/current"
+```
+
+`README.md` sections (Create): **What hostd is** (one paragraph, SPEC 1 and 5.1); **Running hostd** (`init-config`, `deploy/install.sh`, `deploy/install.sh --enable`, `bun run deploy/serve.ts`, where the config, `sent.jsonl`, `access.log` and the local token live); **Security limit of 127.0.0.1 mode**: "hostd listens on 127.0.0.1, so any program running as cymatic or root on this machine can reach it with the local token file, or by sending Tailscale identity headers directly. Unix-socket mode with peer checks is not possible in Bun 1.4.2: `Bun.serve` exposes no peer uid (Verified facts 5)."; **Identity**: hostd uses the last `X-Forwarded-For` entry and, when `singleForwardedFor` is true, refuses requests with more than one entry (set after `auth-live.ts` shows that `tailscale serve` writes a single entry).
+
+**Tests (`server/test/main.test.ts`, scratch config and fake tailscale only):**
+
+```ts
+import { afterEach, beforeEach, expect, test } from "bun:test";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import path from "node:path";
+import { planServe } from "../../deploy/serve";
+import { localTokenPath } from "../src/auth/localtoken";
+import { cleanEnv } from "../src/exec";
+import { configPath } from "../src/main";
+import { Scratch } from "./helpers/scratch";
+
+const BUN = process.execPath;
+const REPO = path.join(import.meta.dir, "..", "..");
+const MAIN = path.join(REPO, "server", "src", "main.ts");
+const REAL_STATE = path.join(homedir(), ".local", "state", "porthole");
+
+let s: Scratch;
+beforeEach(() => { s = new Scratch(); });
+afterEach(() => s.cleanup());
+
+/** Names, sizes and times of the real state folder, to prove a test wrote nothing there. */
+function snapshot(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).sort().map((n) => {
+    const st = statSync(path.join(dir, n));
+    return n + ":" + st.size + ":" + st.mtimeMs;
+  });
+}
+
+async function readUntil(stream: ReadableStream<Uint8Array>, re: RegExp, ms: number): Promise<RegExpExecArray> {
+  const reader = stream.getReader();
+  const dec = new TextDecoder();
+  const deadline = Date.now() + ms;
+  let out = "";
+  while (Date.now() < deadline) {
+    const chunk = await Promise.race([reader.read(), Bun.sleep(Math.max(1, deadline - Date.now())).then(() => null)]);
+    if (chunk === null || chunk.done) break;
+    out += dec.decode(chunk.value);
+    const m = re.exec(out);
+    if (m) {
+      reader.releaseLock();
+      return m;
+    }
+  }
+  throw new Error("no match for " + re.source + " in: " + out);
+}
+
+test("configPath honours PORTHOLE_CONFIG, else uses HOME", () => {
+  expect(configPath({ PORTHOLE_CONFIG: "/x/hostd.json", HOME: "/home/x" })).toBe("/x/hostd.json");
+  expect(configPath({ HOME: "/home/x" })).toBe("/home/x/.config/porthole/hostd.json");
+});
+
+test("init-config writes the PORTHOLE_CONFIG file from the given tailscale, 0600, and never overwrites", () => {
+  const file = path.join(s.root, "cfg", "hostd.json");
+  const argv = [BUN, MAIN, "init-config", "--tailscale", path.join(s.fakeBin, "tailscale")];
+  const env = cleanEnv({ PORTHOLE_CONFIG: file, HOME: s.root });
+  const first = Bun.spawnSync(argv, { env, stdout: "pipe", stderr: "pipe" });
+  expect(first.exitCode).toBe(0);
+  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ machineName: "testhost", origin: "https://testhost.example.ts.net", peers: [] });
+  expect(statSync(file).mode & 0o777).toBe(0o600);
+  const second = Bun.spawnSync(argv, { env, stdout: "pipe", stderr: "pipe" });
+  expect(second.exitCode).toBe(0);
+  expect(second.stdout.toString()).toContain("kept existing");
+  expect(s.fakeCalls("tailscale")).toEqual([["status", "--json"]]);
+  expect(existsSync(path.join(s.root, ".config", "porthole", "hostd.json"))).toBe(false);
+});
+
+test("a started main.ts uses only its scratch config, lists only scratch sessions, and exits 0 on SIGTERM", async () => {
+  const before = snapshot(REAL_STATE);
+  const sock = s.newTmuxServer("only-scratch");
+  const file = path.join(s.root, "hostd.json");
+  writeFileSync(file, JSON.stringify(s.config()), { mode: 0o600 });
+  const proc = Bun.spawn([BUN, MAIN], { env: cleanEnv({ PORTHOLE_CONFIG: file, HOME: s.root, XDG_RUNTIME_DIR: s.runtimeDir }), stdout: "pipe", stderr: "pipe" });
+  try {
+    const m = await readUntil(proc.stdout, /porthole hostd 0\.1\.0 on 127\.0\.0\.1:(\d+)/, 10_000);
+    const base = "http://127.0.0.1:" + m[1];
+    const headers = { "X-Porthole": "1", "X-Porthole-Local": readFileSync(localTokenPath(s.runtimeDir), "utf8").trim() };
+    const machine = await fetch(base + "/v1/machine", { headers });
+    expect(machine.status).toBe(200);
+    expect(((await machine.json()) as { name: string }).name).toBe("testhost");
+    const tree = (await (await fetch(base + "/v1/sessions", { headers })).json()) as { sessions: { id: string }[] };
+    expect(tree.sessions.map((x) => x.id)).toEqual(["tmux:" + sock + ":only-scratch:0.0"]);
+    expect(existsSync(path.join(s.stateDir, "access.log"))).toBe(true);
+    proc.kill("SIGTERM");
+    expect(await proc.exited).toBe(0);
+  } finally {
+    if (proc.exitCode === null) proc.kill("SIGKILL");
+  }
+  expect(snapshot(REAL_STATE)).toEqual(before);
+}, 20_000);
+
+test("unit file, install script and serve script follow SPEC 7", () => {
+  const unit = readFileSync(path.join(REPO, "deploy", "porthole.service"), "utf8");
+  for (const line of ["UMask=0077", "Restart=on-failure", "RestartSec=5", "WantedBy=default.target", "ExecStart=/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun run %h/.local/share/porthole/hostd/current/server/src/main.ts"]) {
+    expect(unit).toContain(line);
+  }
+  const install = readFileSync(path.join(REPO, "deploy", "install.sh"), "utf8");
+  const serve = readFileSync(path.join(REPO, "deploy", "serve.ts"), "utf8");
+  for (const src of [install, serve]) {
+    expect(src).not.toMatch(/\bsudo\b/);
+    expect(src).not.toMatch(/tailscaled/);
+  }
+  expect(install).toContain("systemctl --user enable --now porthole.service");
+  // serve.ts only adds entries (SPEC 7): it never calls `tailscale serve reset` or `... off`.
+  expect(serve).not.toMatch(/\breset\b/);
+  expect(serve).not.toMatch(/\boff\b/);
+});
+
+test("planServe adds only Porthole's two entries and refuses a port something else holds", () => {
+  const host = "testhost.example.ts.net";
+  const api = "http://127.0.0.1:8797";
+  const preview = "http://127.0.0.1:8798";
+  const web = (port: string, proxy: string) => ({ [host + ":" + port]: { Handlers: { "/": { Proxy: proxy } } } });
+  expect(planServe({}, host)).toEqual({ refuse: "", add: [["serve", "--bg", "--https=443", api], ["serve", "--bg", "--https=8443", preview]] });
+  const ours = { TCP: { "443": { HTTPS: true }, "8443": { HTTPS: true } }, Web: { ...web("443", api), ...web("8443", preview) } };
+  expect(planServe(ours, host)).toEqual({ refuse: "", add: [] });
+  const clash = { TCP: { "443": { HTTPS: true } }, Web: web("443", "http://127.0.0.1:3000") };
+  const r = planServe(clash, host);
+  expect(r.add).toEqual([]);
+  expect(r.refuse).toContain("443");
+  const unrelated = { TCP: { "10000": { HTTPS: true } }, Web: web("10000", "http://127.0.0.1:3000") };
+  expect(planServe(unrelated, host).add.map((a) => a[2])).toEqual(["--https=443", "--https=8443"]);
+});
+```
 
 Run: `/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/main.test.ts`
+Expected before implementing: FAIL, `Cannot find module '../../deploy/serve'`. After: PASS, 5 tests.
 
-Commit: `P1 task 12: main entry, user service, install, tailscale serve setup, README limit, auth live check`
+**`server/test/live/auth-live.ts`** (SPEC P1.5; run only by the orchestrator, in live step L3 below; calls only `/v1/machine` and the auth checks, so it never lists or touches a session):
+
+```ts
+// P1.5 live auth check against the INSTALLED hostd (port 8797) and its `tailscale serve` entry.
+// Exit 0 = every check passed. Exit 1 = a check failed: STOP, change nothing, report to Ben.
+// Exit 2 = could not run (no config, no token, tailscale or serve unreachable): also stop and report.
+// `--ping` only asks GET /v1/machine with the local token (P1.6 evidence after a restart).
+import { existsSync, readFileSync } from "node:fs";
+import { connect as netConnect, type Socket } from "node:net";
+import { connect as tlsConnect } from "node:tls";
+import { localTokenPath } from "../../src/auth/localtoken";
+import { loadConfig } from "../../src/config";
+import { run } from "../../src/exec";
+import { asArray, asRecord, asString } from "../../src/json";
+import { configPath } from "../../src/main";
+
+const API = "http://127.0.0.1:8797";
+
+function cannotRun(why: string): never {
+  console.log("CANNOT RUN: " + why);
+  process.exit(2);
+}
+
+const cfg = (() => {
+  try { return loadConfig(configPath()); } catch (e) { return cannotRun(e instanceof Error ? e.message : String(e)); }
+})();
+const tokenFile = localTokenPath(cfg.runtimeDir);
+if (!existsSync(tokenFile)) cannotRun("no local token at " + tokenFile + " (is porthole.service running?)");
+const token = readFileSync(tokenFile, "utf8").trim();
+const local = { "X-Porthole": "1", "X-Porthole-Local": token };
+
+async function machine(base: string, headers: Record<string, string>, method = "GET"): Promise<{ status: number; body: Record<string, unknown> }> {
+  const r = await fetch(base + "/v1/machine", { method, headers, signal: AbortSignal.timeout(10_000) });
+  let body: Record<string, unknown> = {};
+  try { body = asRecord(await r.json()); } catch { body = {}; }
+  return { status: r.status, body };
+}
+
+/** Status code of a WebSocket upgrade to /v1/events (0 = no answer). Reads only the status line. */
+function upgradeStatus(base: string, headers: Record<string, string>): Promise<number> {
+  const u = new URL(base);
+  const secure = u.protocol === "https:";
+  const lines = ["GET /v1/events HTTP/1.1", "Host: " + u.host, "Upgrade: websocket", "Connection: Upgrade", "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version: 13", ...Object.entries(headers).map(([k, v]) => k + ": " + v)];
+  return new Promise((resolve) => {
+    const port = Number(u.port || (secure ? 443 : 80));
+    const sock: Socket = secure ? tlsConnect({ host: u.hostname, port, servername: u.hostname }) : netConnect(port, u.hostname);
+    let buf = "";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = (code: number) => { if (timer) clearTimeout(timer); sock.destroy(); resolve(code); };
+    timer = setTimeout(() => done(0), 10_000);
+    sock.once(secure ? "secureConnect" : "connect", () => sock.write(lines.join("\r\n") + "\r\n\r\n"));
+    sock.on("data", (d: Buffer) => {
+      buf += d.toString("latin1");
+      const m = /^HTTP\/1\.1 (\d{3})/.exec(buf);
+      if (m) done(Number(m[1]));
+    });
+    sock.on("error", () => done(0));
+  });
+}
+
+if (process.argv.includes("--ping")) {
+  const r = await machine(API, local).catch(() => cannotRun("hostd does not answer on " + API));
+  console.log("ping /v1/machine: " + r.status);
+  process.exit(r.status === 200 ? 0 : 1);
+}
+
+// Addresses from `tailscale status --json`: Self.DNSName is used by Task 1; Self/Peer TailscaleIPs and
+// Peer DNSName are GUESS field names until this first run (a missing field stops with exit 2).
+const st = await run([cfg.bin.tailscale, "status", "--json"]);
+if (st.code !== 0) cannotRun("tailscale status failed: " + st.stderr.trim());
+const status = asRecord(JSON.parse(st.stdout));
+const selfIp = asString(asArray(asRecord(status.Self).TailscaleIPs)[0]);
+if (!selfIp) cannotRun("tailscale status shows no address for this machine");
+const peers = Object.values(asRecord(status.Peer)).map((p) => ({ name: asString(asRecord(p).DNSName).split(".")[0], ip: asString(asArray(asRecord(p).TailscaleIPs)[0]) }));
+const allowedPeer = peers.find((p) => p.ip && p.name !== cfg.machineName && cfg.allowedNodes.includes(p.name));
+const foreignPeer = peers.find((p) => p.ip && !cfg.allowedNodes.includes(p.name));
+const spoofIp = allowedPeer?.ip ?? "100.64.0.1";
+const wrongNodeIp = foreignPeer?.ip ?? "100.64.0.254";
+
+let failed = 0;
+function check(name: string, ok: boolean, detail: string): void {
+  console.log((ok ? "PASS " : "FAIL ") + name + ": " + detail);
+  if (!ok) failed += 1;
+}
+
+// Through `tailscale serve` (cfg.origin is https://<this machine>.<tailnet>.ts.net on port 443).
+const r1 = await machine(cfg.origin, { "X-Porthole": "1" }).catch((e) => cannotRun("cannot reach " + cfg.origin + ": " + String(e)));
+const you1 = asRecord(r1.body.you);
+check("serve: this allowed device gets 200", r1.status === 200 && asString(you1.device) === cfg.machineName && asString(you1.via) === "tailscale", r1.status + " " + JSON.stringify(you1));
+const r2 = await machine(cfg.origin, { "X-Porthole": "1", "X-Forwarded-For": spoofIp });
+const you2 = asRecord(r2.body.you);
+const xff = asArray(you2.forwardedFor).map(asString);
+check("serve: a spoofed X-Forwarded-For " + spoofIp + " is not believed", r2.status === 200 && asString(you2.device) === cfg.machineName, r2.status + " " + JSON.stringify(you2));
+const verdict = r2.status !== 200 ? "unknown (spoofed request refused)"
+  : xff.length === 1 && xff[0] !== spoofIp ? "serve sets one entry"
+  : xff.length > 1 && xff[0] === spoofIp && xff[xff.length - 1] !== spoofIp ? "serve appends"
+  : "serve passes the client value through";
+console.log("xff: " + verdict + " " + JSON.stringify(xff));
+check("serve: X-Forwarded-For comes from serve, not the client", verdict === "serve sets one entry" || verdict === "serve appends", verdict);
+check("serve: a request without X-Porthole gets 403", (await machine(cfg.origin, {})).status === 403, "");
+check("serve: a POST with a foreign Origin gets 403", (await machine(cfg.origin, { "X-Porthole": "1", Origin: "https://evil.example" }, "POST")).status === 403, "");
+check("serve: a WebSocket from the preview origin gets 403", (await upgradeStatus(cfg.origin, { Origin: cfg.origin + ":8443" })) === 403, "");
+check("serve: a WebSocket from a foreign origin gets 403", (await upgradeStatus(cfg.origin, { Origin: "https://evil.example" })) === 403, "");
+
+// Direct to 127.0.0.1:8797 with injected identity headers (127.0.0.1 mode, SPEC P1.5).
+check("direct: injected wrong login gets 403", (await machine(API, { "X-Porthole": "1", "Tailscale-User-Login": "someone@example.com", "X-Forwarded-For": selfIp })).status === 403, "");
+check("direct: injected node " + (foreignPeer?.name ?? "(unknown address)") + " gets 403", (await machine(API, { "X-Porthole": "1", "Tailscale-User-Login": cfg.allowedLogin, "X-Forwarded-For": wrongNodeIp })).status === 403, wrongNodeIp);
+const r9 = await machine(API, local);
+check("direct: the local token works", r9.status === 200 && asString(asRecord(r9.body.you).device) === "local", String(r9.status));
+check("direct: a WebSocket with a foreign Origin gets 403", (await upgradeStatus(API, { Origin: "https://evil.example", "X-Porthole-Local": token })) === 403, "");
+check("direct: a WebSocket with the preview origin gets 403", (await upgradeStatus(API, { Origin: cfg.origin + ":8443", "X-Porthole-Local": token })) === 403, "");
+if (cfg.singleForwardedFor) {
+  const two = await machine(API, { "X-Porthole": "1", "Tailscale-User-Login": cfg.allowedLogin, "X-Forwarded-For": "100.64.0.254, " + selfIp });
+  check("direct: two X-Forwarded-For entries get 403 (singleForwardedFor)", two.status === 403, String(two.status));
+}
+
+console.log(failed === 0 ? "ALL PASS" : failed + " FAILED: stop, change nothing, report to Ben (Needs Ben 5)");
+process.exit(failed === 0 ? 0 : 1);
+```
+
+Commit: `P1 task 12: main entry, user service, install, tailscale serve setup, README, auth live check`
+
+**Live steps (orchestrator only, after every task is merged and the full `bun test server/test` passed; each step once, in this order; any failure stops the run and goes to Needs Ben, never fix-and-continue):**
+
+- [ ] **L1. Config and snapshot.** `bun run server/src/main.ts init-config` (reads this machine's real name from `tailscale status --json`, read-only; keeps an existing file), then `bash deploy/install.sh` (no `--enable`). Record both outputs.
+- [ ] **L2. Enable and serve (Ben's yes first, SPEC 7).** `bash deploy/install.sh --enable`, then `bun run deploy/serve.ts`. Record the `before:` and `after:` status lines. serve.ts exit 1 (a port is held by something else) → stop, Needs Ben.
+- [ ] **L3. Live auth check (P1.5).** `bun run server/test/live/auth-live.ts`. Exit 1 or 2 → **stop**: do not deploy anything else, do not change the config, put the full output in the run report under Needs Ben (item 5 when the `xff:` line says the client value is passed through). Exit 0 with `xff: serve sets one entry` → set `"singleForwardedFor": true` in `~/.config/porthole/hostd.json`, `systemctl --user restart porthole.service`, and run `auth-live.ts` one more time (its two-entry check now runs); that second run must also exit 0. Exit 0 with `xff: serve appends` → keep `singleForwardedFor` false (the last-entry rule already protects) and say so in the report.
+- [ ] **L4. P1.6 evidence.** Record the output of each, in the run report:
+  1. `systemctl --user is-enabled porthole.service` → `enabled`.
+  2. `systemctl --user restart porthole.service`, wait up to 10 s, then `systemctl --user is-active porthole.service` → `active` and `bun run server/test/live/auth-live.ts --ping` → `ping /v1/machine: 200` (exit 0).
+  3. `tailscale serve status --json` → Porthole's 443 and 8443 entries **plus** every entry that was in serve.ts's `before:` line (nothing removed or changed).
+  4. `main.test.ts` test "unit file, install script and serve script follow SPEC 7" passed in the full run (serve.ts contains no `reset` or `off`).
 
 ---
 
 ## Self-review
 
-- **SPEC coverage (P1):** sessions from tmux + herdr (T2, T8); omp/transcript/live voice/status (T3, T8); chat history + live chat (T4, T9); screen (T9); send with exactly-once, inbox/tmux/herdr routes, refusals, crash recovery (T6, T10); key row (T10); terminal (T11); auth, Origin, X-Porthole, access log, local token (T5, T8); live-inbox move and single live run (T7, T10); service/install/serve/live auth check (T12). Phone app, control room UI, notifications: P2+, not here.
-- **Names checked across tasks:** `HostdConfig` fields, `Scratch` methods, `sessionId`/`tmuxTarget`, `SendRecord`, `CLIENT_MSG_ID`, `MAX_MESSAGE_BYTES`, `Registry`, `FeatureFactory` are spelled the same everywhere they appear.
-- **Honest gap:** Tasks 8-12 give contracts and test cases, not finished code (see the note above Task 8).
+- **SPEC coverage (P1):** P1.1 sessions from two scratch sockets + fake herdr with statuses and live voice (T8 registry test 8); P1.2 chat backlog then append (T9); screen (T9); P1.3 send exactly once over inbox/tmux/herdr, same id twice, retry after refused/failed, crash recovery, forced failure (T6, T10, the one live-inbox run); key row (T10); P1.4 terminal attach, input, own-client detach, live-voice read-only (T11); P1.5 auth, Origin, X-Porthole, injected identity, local token, access log (T5, T8, T12 L3); P1.6 service, restart, serve entries (T12 L4); live-inbox move and install (T7, T10). Phone app, control room UI, notifications: P2+, not here.
+- **Names checked across tasks:** `HostdConfig` fields (incl. `singleForwardedFor`), `Scratch` methods, `sessionId`/`tmuxTarget`/`socketPath`, `SendRecord`, `CLIENT_MSG_ID`, `MAX_MESSAGE_BYTES`, `Registry`, `EventsHub`, `Feature`/`FeatureDeps`/`FeatureFactory`, `Hostd`, `Deliverer`, `configPath` are spelled the same everywhere they appear.
+- **Honest gap:** Tasks 8-12 give contracts and complete test files, not finished implementation code (see the note above Task 8).
 
 ## Needs Ben (carried into the P1 run report)
 
 1. **herdr terminal is read-only in P1.** Whether `herdr` can attach a second viewer (or `--takeover` safely) was not verified without touching real panes. Options: keep read-only (recommended), or let a builder test it against a scratch herdr later.
-2. **herdr key names and the `--` separator** for `herdr prompt`/`keys` are partly **GUESS** (`esc` verified). Task 10's fake accepts what the plan sends; the first real herdr send in P1.5 confirms or corrects.
-3. **127.0.0.1 mode only.** Bun 1.3.14 gives no peer-credential check on a Unix socket, so hostd uses 127.0.0.1 + a local token file; any program running as cymatic or root can reach it. Options: accept and document (recommended), or wait for a later runtime.
-4. **Installing `live-inbox.ts`** makes every new omp session (Thalamus included, next start) watch an inbox folder. Options: install after the one passing run (recommended), or keep it opt-in per session with `-e`.
+2. **herdr key names and the `--` separator** for `herdr prompt`/`keys` are partly **GUESS** (`esc` and `ctrl+c` verified from herdr's own help text). Task 10's fake accepts what the plan sends; the first real herdr send in P1.5 confirms or corrects.
+3. **127.0.0.1 mode only.** Bun 1.4.2 gives no peer-credential check on a Unix socket, so hostd uses 127.0.0.1 + a local token file; any program running as cymatic or root can reach it. Options: accept and document (recommended), or wait for a later runtime.
+4. **Installing `live-inbox.ts`** makes every new omp session (Thalamus included, next start) watch an inbox folder. Options: install after the one passing run (recommended; the orchestrator reports the install in that same turn's report), or keep it opt-in per session with `-e`.
+5. **If `auth-live.ts` shows that `tailscale serve` passes a client's `X-Forwarded-For` through** (Task 12 L3), any device signed in as Ben could claim another device's address. Options: hold P1.5 until a safer identity source exists (recommended), or accept login-only identity (no device allowlist).
+6. **Multi-line text over the tmux route.** SPEC 4.5's `send-keys -l` types each line break as a Ctrl-J key. Whether omp's input box treats that as a new line or as "send" is not verified ([INFERENCE]: most editors insert a line); P1.3(b) proves it with a plain `cat`. Options: keep SPEC's method (recommended, built), or switch to a bracketed paste for omp panes later.
 
 ## Execution handoff
 
-Run Tasks 1-12 in the parallel groups above: one builder per task in its own worktree (`omp-worktree new p1-task-<n>`), each told "at most 2 failed attempts per step; if a step fails twice, stop and report", and Section 7 of the SPEC. Merge each green task into `feat/p1-hostd` after `git merge-tree --write-tree` shows no conflicts. The orchestrator runs the full `bun test server/test` once after all merges, then `live-inbox-once.ts` (once, with Ben's yes), then T12's install and `auth-live.ts`.
+Run Tasks 1-12 in the parallel groups above: one builder per task in its own worktree (`omp-worktree new p1-task-<n>`), each told "at most 2 failed attempts per step; if a step fails twice, stop and report", and Section 7 of the SPEC. Merge each green task into `feat/p1-hostd` after `git merge-tree --write-tree` shows no conflicts. The orchestrator runs the full `bun test server/test` once after all merges, then `live-inbox-once.ts` exactly once (with Ben's yes; pass or fail, never rerun; install and report as Task 10 says), then Task 12's live steps L1-L4.
