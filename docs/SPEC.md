@@ -273,6 +273,10 @@ drawer on the phone. Its groups, top to bottom:
   time per device. The Tailscale identity and node check of 5.4 applies (preview pages cannot send
   `X-Porthole`). Preview pages are a different origin from the control room (port 8443 vs 443), and
   the API rejects them (5.4).
+- Writes through the preview proxy (any request other than GET/HEAD, and WebSocket upgrades) must
+  carry the preview page's own origin (`https://<machine>.ts.net:8443`) exactly; anything else,
+  including the control-room origin, gets 403. The proxy then presents the request to the dev
+  server as coming from `http://127.0.0.1:<port>` (Host, Origin and same-origin Referer rewritten).
 
 ### 4.11 Agent usage (Moshi: agent usage)
 - Shows how much of Ben's Claude usage limits is used: the 5-hour and 7-day windows, with the time
@@ -287,9 +291,9 @@ drawer on the phone. Its groups, top to bottom:
 - A mic button on the chat view. Tap to start, tap to stop, with optional auto-stop after about 2 s of
   silence. The app records 16 kHz mono WAV (the phone app records natively; the control room uses
   `getUserMedia`/`MediaRecorder` and converts in the browser) and uploads it to hostd.
-- hostd transcribes with `voxtype transcribe <file.wav>` (local Whisper, no per-use cost; the v1
-  spec records voxtype 1.1.0 and this command as checked on 2026-10-12: **GUESS** for v2, not
-  re-checked; confirm with `voxtype --version` and `voxtype transcribe --help` at P2 start), then
+- hostd transcribes with `voxtype transcribe <file.wav>` (local speech recognition, no per-use cost;
+  verified 2026-10-13: voxtype 1.1.0 on this desktop uses the SenseVoice engine, not Whisper, and
+  prints its own log lines on stdout before the text, which hostd strips), then
   optionally cleans the text with `voxflow enhance` (check its stdin/stdout contract in
   `~/.config/voxflow/config.toml`). The audio is deleted after a successful transcription. If it
   fails, the audio is kept (0600, `~/.local/state/porthole/audio/`) for 30 days so the words can be
