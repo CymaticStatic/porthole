@@ -2,9 +2,10 @@
 // separate browser page with no bridge (a new tab, or the app's own in-app browser through `openExternal`).
 import { h } from "../dom/h.js";
 import { copy } from "../lib/copy.js";
+import { asObject } from "../lib/json.js";
 
 /** @typedef {{port: number, pid: number | null, process: string | null, url: string}} Preview */
-/** @typedef {{fleet: {machine(name: string): import("../net/machine.js").Machine | undefined}, route: import("../lib/route.js").Route, bridge?: {available: boolean, call(method: string, args?: unknown): Promise<any>}}} Ctx */
+/** @typedef {{fleet: {machine(name: string): import("../net/machine.js").Machine | undefined}, route: import("../lib/route.js").Route, bridge?: import("../lib/types.js").Bridge}} Ctx */
 
 const POLL_MS = 10_000;
 
@@ -76,7 +77,7 @@ export function mount(root, ctx) {
     if (failure !== null) {
       panel.replaceChildren(...[
         note(copy.previewsFailed, "previews-error"),
-        failure !== copy.previewsFailed ? h("p", { class: "panel-note panel-detail" }, failure) : null,
+        failure !== copy.previewsFailed ? h("p", { class: "panel-note panel-detail" }, copy.reasonLine(failure)) : null,
         h("button", { type: "button", class: "btn", "data-test": "previews-retry", on: { click: () => { void load(); } } }, copy.tryAgain),
       ].filter((n) => n !== null));
       return;
@@ -97,8 +98,10 @@ export function mount(root, ctx) {
     if (stopped) return;
     if (r.ok) {
       failure = null;
-      const list = Array.isArray(r.data?.previews) ? /** @type {Preview[]} */ (r.data.previews) : [];
-      const proxyPort = typeof r.data?.proxy?.port === "number" ? /** @type {number} */ (r.data.proxy.port) : null;
+      const body = asObject(r.data);
+      const list = Array.isArray(body.previews) ? /** @type {Preview[]} */ (body.previews) : [];
+      const proxy = asObject(body.proxy);
+      const proxyPort = typeof proxy.port === "number" ? proxy.port : null;
       const key = JSON.stringify([list, proxyPort]);
       if (key !== lastKey || data === null) {
         lastKey = key;

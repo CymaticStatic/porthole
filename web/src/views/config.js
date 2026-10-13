@@ -3,6 +3,7 @@
 // machine's hostd; nothing is stored on this device.
 import { h } from "../dom/h.js";
 import { copy } from "../lib/copy.js";
+import { asArray, asObject } from "../lib/json.js";
 import { parseSteps, stepLabel } from "../lib/steps.js";
 import { section, toggleRow } from "./settings.js";
 
@@ -16,12 +17,15 @@ const LABEL_TOO_LONG = copy.labelTooLong(LABEL_MAX);
 /** A message that says it is loading, then is replaced. @param {string} text */
 const note = (text) => h("p", { class: "set-note" }, text);
 
+/** @param {unknown} p @returns {p is string} */
+const isString = (p) => typeof p === "string";
+
 /**
  * Loads into `box`: "Loading…", then `render(data)` on success, or the failure sentence and a Try again button.
  * @param {HTMLElement} box
- * @param {() => Promise<{ok: boolean, data?: any, error?: string}>} fetcher
+ * @param {() => Promise<import("../net/api.js").ApiResult>} fetcher
  * @param {string} failed
- * @param {(data: any) => void} render
+ * @param {(data: unknown) => void} render
  * @param {() => boolean} alive
  */
 function loadInto(box, fetcher, failed, render, alive) {
@@ -48,7 +52,7 @@ function chips(stepsText) {
 
 /**
  * @param {HTMLElement} root
- * @param {{fleet: any, route: {view: string, machine?: string}}} ctx
+ * @param {Pick<import("../lib/types.js").Ctx, "fleet"> & {route: {view: string, machine?: string}}} ctx
  * @returns {{unmount(): void}}
  */
 export function mount(root, ctx) {
@@ -194,8 +198,9 @@ export function mount(root, ctx) {
   const shortcutBody = h("div", { class: "set-stack" });
   const shortcutSection = section(copy.shortcutsEditor, shortcutBody);
   loadInto(shortcutBody, () => api.get("/v1/shortcuts"), copy.configFailed, (data) => {
-    items = Array.isArray(data?.shortcuts)
-      ? data.shortcuts.filter((/** @type {any} */ s) => s && typeof s.label === "string" && typeof s.steps === "string").map((/** @type {Shortcut} */ s) => ({ label: s.label, steps: s.steps }))
+    const body = asObject(data);
+    items = Array.isArray(body.shortcuts)
+      ? body.shortcuts.map(asObject).filter((s) => typeof s.label === "string" && typeof s.steps === "string").map((s) => ({ label: String(s.label), steps: String(s.steps) }))
       : [];
     renderList();
     shortcutBody.replaceChildren(list, status, addButton, editor);
@@ -204,11 +209,12 @@ export function mount(root, ctx) {
   // ---- Settings on this machine ----
   const hostBody = h("div", { class: "set-stack" });
   const hostSection = section(copy.hostSettings, hostBody);
-  loadInto(hostBody, () => api.get("/v1/config"), copy.configFailed, (/** @type {any} */ cfg) => {
+  loadInto(hostBody, () => api.get("/v1/config"), copy.configFailed, (data) => {
+    const cfg = asObject(data);
     let saved = {
       previewRanges: String(cfg.previewRanges ?? "none"),
       usageCollection: cfg.usageCollection === true,
-      peers: Array.isArray(cfg.peers) ? cfg.peers.filter((/** @type {unknown} */ p) => typeof p === "string") : [],
+      peers: Array.isArray(cfg.peers) ? cfg.peers.filter(isString) : [],
       voiceEnhance: cfg.voiceEnhance === true,
     };
     const labels = /** @type {Record<string, string>} */ (copy.configLabels);
@@ -244,13 +250,14 @@ export function mount(root, ctx) {
         failure.hidden = false;
         return;
       }
+      const out = asObject(r.data);
       saved = {
-        previewRanges: String(r.data?.previewRanges ?? saved.previewRanges),
-        usageCollection: r.data?.usageCollection === true,
-        peers: Array.isArray(r.data?.peers) ? r.data.peers : peers,
-        voiceEnhance: r.data?.voiceEnhance === true,
+        previewRanges: String(out.previewRanges ?? saved.previewRanges),
+        usageCollection: out.usageCollection === true,
+        peers: Array.isArray(out.peers) ? /** @type {string[]} */ (out.peers) : peers,
+        voiceEnhance: out.voiceEnhance === true,
       };
-      result.textContent = r.data?.restartNeeded === true ? copy.restartNeeded(name) : copy.configSaved;
+      result.textContent = out.restartNeeded === true ? copy.restartNeeded(name) : copy.configSaved;
     });
     hostBody.replaceChildren(
       h("label", { class: "set-field" }, h("span", {}, labels.previewRanges), rangesInput),
@@ -267,10 +274,10 @@ export function mount(root, ctx) {
   // ---- Checks (the doctor, including the omp extension files) ----
   const doctorBody = h("div", { class: "set-stack" });
   const doctorSection = section(copy.doctorTitle, doctorBody);
-  /** @param {any} data */
+  /** @param {unknown} data */
   const renderChecks = (data) => {
-    const checks = Array.isArray(data?.checks) ? data.checks : [];
-    const rows = checks.map((/** @type {{id: string, ok: boolean, detail?: string}} */ c) =>
+    const checks = /** @type {{id: string, ok: boolean, detail?: string}[]} */ (asArray(asObject(data).checks));
+    const rows = checks.map((c) =>
       h("div", { class: `doctor-row ${c.ok ? "doctor-ok" : "doctor-bad"}`, "data-test": "doctor-check", "data-id": c.id, "data-ok": String(c.ok === true) },
         h("span", { class: "doctor-mark", "aria-hidden": "true" }, c.ok ? "✓" : "▲"),
         h("span", { class: "set-row-text" },

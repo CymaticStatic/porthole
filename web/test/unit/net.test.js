@@ -49,7 +49,7 @@ test("machine link: device query, tree from the sessions push (no polling), ack 
   const tree = { machine: "testdesk", sessions: [{ id: "tmux:t:main:0.0" }], sources: [], scannedAt: "2026-10-13T10:00:00Z" };
   ws.onmessage?.({ data: JSON.stringify({ type: "sessions", tree }) });
   expect(m.tree()).toEqual(tree);
-  expect(timers).toEqual([]);
+  expect(timers.map((t) => t.ms)).toEqual([10_000]); // only the ping timer: no polling
   ws.onmessage?.({ data: JSON.stringify({ type: "notify", id: 7, itemId: "i", title: "t", body: "b", options: [], at: "" }) });
   expect(ws.sent.map((d) => JSON.parse(d))).toEqual([{ type: "ack", id: 7 }]);
   ws.close(); expect(m.state()).toBe("down"); expect(timers.at(-1).ms).toBe(1000);
@@ -69,6 +69,22 @@ test("fleet: views report their own links; the strip sees them; drop removes the
   fleet.reportLink("Terminal", "up"); expect(fleet.anyDown()).toBe(false);
   drop(); expect(fleet.links()).toEqual([]);
   expect(changes).toBe(3);
+});
+
+test("fleet: online, a visible page and the bridge's network event redial every machine link, up or not", () => {
+  FakeWs.all = [];
+  const listeners = {}; const docListeners = {}; const bridgeListeners = {};
+  const win = { addEventListener: (n, fn) => { listeners[n] = fn; }, removeEventListener() {}, document: { visibilityState: "hidden", addEventListener: (n, fn) => { docListeners[n] = fn; }, removeEventListener() {} } };
+  const bridge = { available: true, on: (n, fn) => { bridgeListeners[n] = fn; return () => {}; } };
+  const { f } = fakeFetch(Array(10).fill(0).map(() => ({ status: 200, body: { items: [] } })));
+  createFleet({ machines: [{ name: "testdesk", origin: O }], deviceId: "web-abc123def456", deps: { fetch: f, WebSocket: FakeWs, setTimeout: () => 1, clearTimeout() {}, outbox: createOutbox(memoryStorage()), window: win, bridge } });
+  FakeWs.all[0].onopen?.({});
+  listeners.online(); expect(FakeWs.all.length).toBe(2);
+  FakeWs.all[1].onopen?.({});
+  docListeners.visibilitychange(); expect(FakeWs.all.length).toBe(2); // still hidden
+  win.document.visibilityState = "visible";
+  docListeners.visibilitychange(); expect(FakeWs.all.length).toBe(3);
+  bridgeListeners.network(); expect(FakeWs.all.length).toBe(4);
 });
 
 test("held sends: B1 is the only sender; every answer reaches onSendResult; a failed re-post stays held for the next up", async () => {

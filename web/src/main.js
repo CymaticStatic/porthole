@@ -12,7 +12,7 @@ const SETTINGS_KEY = "porthole:settings";
 const DEVICE_KEY = "porthole:device";
 
 /** @typedef {import("./lib/storage.js").Store} Store */
-/** @typedef {Record<string, any>} Settings */
+/** @typedef {import("./lib/types.js").Settings} Settings */
 
 /**
  * `ctx.settings`: the one JSON object under `porthole:settings`. Only this function touches that key. `get()` returns the whole
@@ -63,10 +63,10 @@ function createSettings(store, win) {
 
 /** The app event bus (`ctx.events`). */
 function createEvents() {
-  /** @type {Map<string, Set<(data: any) => void>>} */
+  /** @type {Map<string, Set<(data: unknown) => void>>} */
   const listeners = new Map();
   return {
-    /** @param {string} name @param {(data: any) => void} fn @returns {() => void} */
+    /** @param {string} name @param {(data: unknown) => void} fn @returns {() => void} */
     on(name, fn) {
       const set = listeners.get(name) ?? new Set();
       listeners.set(name, set);
@@ -110,7 +110,7 @@ function listenForSendResults({ fleet, outbox, drafts, events }) {
         const entry = outbox.get(clientMsgId);
         if (!entry) return; // the outbox no longer holds it: nothing to apply
         if (action.draft === "clear") {
-          drafts.clear(entry.origin, sessionId);
+          drafts.clearIf(entry.origin, sessionId, entry.text);
           drafts.addSent(entry.origin, sessionId, { clientMsgId, text: entry.text, at: entry.at, status: "delivered", reason: null });
         }
         if (action.outbox === "remove") outbox.remove(clientMsgId);

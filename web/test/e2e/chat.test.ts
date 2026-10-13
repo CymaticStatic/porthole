@@ -138,6 +138,22 @@ test("attachments: a chosen file and a pasted image each put their full uploaded
   expect(sent.body.text.trim().split("\n")).toEqual(lines);
 });
 
+test("sending the same words twice ('yes') is two messages: two different clientMsgIds, two deliveries", async () => {
+  const sends = () => st.proxies.desk.requests("/v1/sessions/").filter((r) => r.method === "POST" && r.path.endsWith("/send"));
+  const before = sends().length;
+  for (let i = 0; i < 2; i++) {
+    await st.page.click("[data-test=composer] textarea"); await st.page.type("yes");
+    await st.page.click("[data-test=send]");
+    await st.page.waitFor(`${box}.value === ""`, 10000);
+  }
+  const mine = sends().slice(before);
+  expect(mine.length).toBe(2);
+  expect(mine.map((r) => r.body.text)).toEqual(["yes", "yes"]);
+  expect(mine[0].body.clientMsgId).not.toBe(mine[1].body.clientMsgId);
+  const ids = await st.page.eval(`Object.keys(localStorage).filter((k) => k.startsWith("porthole:sent:")).flatMap((k) => JSON.parse(localStorage.getItem(k))).filter((i) => i.text === "yes").map((i) => i.clientMsgId + ":" + i.status)`);
+  expect(ids.sort()).toEqual(mine.map((r) => r.body.clientMsgId + ":delivered").sort());
+});
+
 test("P3-2a: reloading mid-draft keeps the draft", async () => {
   await st.page.click("[data-test=composer] textarea");
   await st.page.type("half a thought about the plan");

@@ -2,6 +2,7 @@
 // collapsible row; hunks are unified on a phone and side by side on a wide window (>= 1100 px).
 import { h } from "../dom/h.js";
 import { copy } from "../lib/copy.js";
+import { asObject } from "../lib/json.js";
 
 /** @typedef {{path: string, from: string | null, status: string, binary: boolean, patch: string}} ChangedFile */
 /** @typedef {{kind: "hunk" | "add" | "del" | "ctx" | "note", text: string}} DiffLine */
@@ -121,7 +122,7 @@ export function mount(root, ctx) {
   const panel = h("div", { class: "panel diff", "data-test": "diff" });
   root.replaceChildren(panel);
 
-  /** @type {any} */
+  /** @type {{repo?: boolean, staged?: ChangedFile[], unstaged?: ChangedFile[], untracked?: {path: string}[]} | null} */
   let data = null;
   /** The reply as text, so an unchanged reply never rebuilds the screen. */
   let lastKey = "";
@@ -172,7 +173,7 @@ export function mount(root, ctx) {
     if (failure !== null) {
       panel.replaceChildren(...[
         note(copy.diffFailed, "diff-error"),
-        failure !== copy.diffFailed ? h("p", { class: "panel-note panel-detail" }, failure) : null,
+        failure !== copy.diffFailed ? h("p", { class: "panel-note panel-detail" }, copy.reasonLine(failure)) : null,
         h("button", { type: "button", class: "btn", "data-test": "diff-retry", on: { click: () => { void load(); } } }, copy.tryAgain),
       ].filter((n) => n !== null));
       return;
@@ -184,7 +185,7 @@ export function mount(root, ctx) {
     /** @type {ChangedFile[]} */
     const unstaged = data.unstaged ?? [];
     /** @type {ChangedFile[]} */
-    const fresh = (data.untracked ?? []).map((/** @type {{path: string}} */ u) => ({ path: u.path, from: null, status: "?", binary: false, patch: "" }));
+    const fresh = (data.untracked ?? []).map((u) => ({ path: u.path, from: null, status: "?", binary: false, patch: "" }));
     const total = staged.length + unstaged.length + fresh.length;
     if (total === 0) { panel.replaceChildren(note(copy.noChanges, "diff-empty")); return; }
     const wide = media.matches;
@@ -209,7 +210,7 @@ export function mount(root, ctx) {
       const key = JSON.stringify(r.data);
       if (key !== lastKey || data === null || wasShowingNote) {
         lastKey = key;
-        data = r.data;
+        data = asObject(r.data);
         render();
       }
     } else if (r.status === 404) {

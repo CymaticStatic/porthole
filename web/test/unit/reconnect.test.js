@@ -28,16 +28,17 @@ test("stop cancels a waiting retry and ignores later closes", () => {
   expect(calls).toBe(1); expect(t.q.length).toBe(1); expect(t.q[0].fn).toBeNull();
 });
 
-test("state follows start, close, retry and open; nudge does nothing unless waiting", () => {
+test("state follows start, close, retry and open; a nudge dials at once in every mode", () => {
   const t = fakeTimers(); let calls = 0;
   const r = createReconnector({ connect: () => calls++, setTimeout: t.setTimeout, clearTimeout: t.clearTimeout });
   r.start(); expect(r.state()).toBe("connecting");
-  r.nudge(); expect(calls).toBe(1);
+  r.nudge(); expect(calls).toBe(2); expect(r.state()).toBe("connecting"); // a stuck dial is dialled again
   r.opened(); expect(r.state()).toBe("up");
-  r.nudge(); expect(calls).toBe(1);
+  r.nudge(); expect(calls).toBe(3); expect(r.state()).toBe("connecting"); // a half-open "up" link is dialled again
+  r.opened();
   r.closed(); expect(r.state()).toBe("waiting");
   r.closed(); expect(t.q.length).toBe(1);
-  t.q[0].fn(); expect(r.state()).toBe("connecting"); expect(calls).toBe(2);
+  t.q[0].fn(); expect(r.state()).toBe("connecting"); expect(calls).toBe(4);
 });
 
 test("the wait caps at 15 seconds", () => {

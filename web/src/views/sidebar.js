@@ -103,7 +103,7 @@ export function createSidebar({ fleet, openList, onChoose }) {
     render(true);
   }
 
-  /** A link that navigates through the shell (so the drawer can close and history stays right). @param {string} to @param {Record<string, any>} attrs @param {(HTMLElement | string | null)[]} kids */
+  /** A link that navigates through the shell (so the drawer can close and history stays right). @param {string} to @param {Record<string, string>} attrs @param {(HTMLElement | string | null)[]} kids */
   function link(to, attrs, kids) {
     return h("a", {
       href: to,

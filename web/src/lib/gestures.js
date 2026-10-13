@@ -221,7 +221,7 @@ export function createCtrlLatch({ doubleMs = 350 } = {}) {
       else state = "off";
       return state;
     },
-    /** The bytes to send for typed `data`. @param {string} data @returns {Uint8Array} */
+    /** The bytes to send for typed `data`. @param {string} data @returns {Uint8Array<ArrayBuffer>} */
     apply(data) {
       if (state === "off" || data === "") return encoder.encode(data);
       if (state === "once") state = "off";
@@ -237,7 +237,7 @@ export function createCtrlLatch({ doubleMs = 350 } = {}) {
 
 /**
  * SGR mouse-wheel bytes for tmux (`set -g mouse on`): lines < 0 scrolls back, lines > 0 forward.
- * @param {number} lines @param {number} col @param {number} row @returns {Uint8Array}
+ * @param {number} lines @param {number} col @param {number} row @returns {Uint8Array<ArrayBuffer>}
  */
 export function wheelBytes(lines, col, row) {
   const count = Math.abs(Math.trunc(lines));

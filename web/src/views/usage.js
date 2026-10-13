@@ -3,6 +3,7 @@
 import { h } from "../dom/h.js";
 import { copy } from "../lib/copy.js";
 import { ago, resetsIn } from "../lib/format.js";
+import { asObject } from "../lib/json.js";
 
 /** @typedef {{id: string, usedPercent: number, resetsAt: string | null, status?: string}} UsageWindow */
 /** @typedef {{kind: "loading"} | {kind: "failed"} | {kind: "ok", windows: UsageWindow[], readAt: string}} MachineUsage */
@@ -97,8 +98,9 @@ export function mount(root, ctx) {
     if (stopped) return;
     let next = RETRY_MS;
     if (r.ok && r.data && typeof r.data === "object") {
-      const windows = Array.isArray(r.data.windows) ? r.data.windows.filter(isWindow) : [];
-      const readAt = typeof r.data.readAt === "string" ? r.data.readAt : "";
+      const body = asObject(r.data);
+      const windows = Array.isArray(body.windows) ? body.windows.filter(isWindow) : [];
+      const readAt = typeof body.readAt === "string" ? body.readAt : "";
       states.set(m.name, { kind: "ok", windows, readAt });
       next = REFRESH_MS;
     } else {

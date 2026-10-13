@@ -120,7 +120,7 @@ export function stepLabel(step) {
  * (a step name such as "C-b").
  * @param {string} step
  * @param {string} [prefix]
- * @returns {Uint8Array}
+ * @returns {Uint8Array<ArrayBuffer>}
  */
 export function stepBytes(step, prefix = "C-b") {
   if (step === "prefix") {

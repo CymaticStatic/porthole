@@ -1,3 +1,5 @@
+import { asObject } from "./json.js";
+
 /** @typedef {import("./storage.js").Store} Store */
 /**
  * @typedef {object} OutboxEntry
@@ -8,7 +10,7 @@
  * @property {string} status
  * @property {number} at
  */
-/** @typedef {{ok: true, data: {status?: string, reason?: string}} | {ok: false, status: number, error: string}} SendAnswer */
+/** @typedef {import("../net/api.js").ApiResult} SendAnswer */
 /** @typedef {{draft: "keep" | "clear", outbox: "keep" | "remove", show: string | null, poll: boolean}} NextAction */
 
 const KEY = "porthole:outbox";
@@ -65,7 +67,7 @@ export function createOutbox(store) {
  */
 export function nextAction(_entry, answer) {
   if (answer.ok) {
-    switch (answer.data.status) {
+    switch (asObject(answer.data).status) {
       case "delivered": return { draft: "clear", outbox: "remove", show: null, poll: false };
       case "pending": return { draft: "keep", outbox: "keep", show: "pendingTitle", poll: true };
       default: return { draft: "keep", outbox: "remove", show: "sendFailedTitle", poll: false }; // refused, failed, or anything unknown

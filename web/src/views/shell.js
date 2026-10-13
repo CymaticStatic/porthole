@@ -18,11 +18,11 @@ const FOCUSABLE = "a[href], button:not([disabled]), input, select, textarea, [ta
 /**
  * @param {{
  *   app: HTMLElement,
- *   base: {fleet: Fleet, settings: unknown, bridge: unknown, copy: typeof copy, events: unknown},
+ *   base: {fleet: Fleet, settings: import("../lib/types.js").SettingsStore, bridge: import("../lib/types.js").Bridge, copy: typeof copy, events: import("../lib/types.js").Events},
  *   openStore: import("../lib/storage.js").Store,
  *   win?: Window,
- *   setTimeout?: (fn: () => void, ms: number) => any,
- *   clearTimeout?: (id: any) => void,
+ *   setTimeout?: typeof setTimeout,
+ *   clearTimeout?: typeof clearTimeout,
  * }} o
  * @returns {{start(): void, navigate(target: string | Route): void, destroy(): void}}
  */
@@ -206,7 +206,7 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
   let current = null;
   let currentHref = "";
   let token = 0;
-  /** @type {any} */
+  /** @type {ReturnType<typeof setTimeout> | null} */
   let noticeTimer = null;
 
   /** @param {Mounted} m */
@@ -244,7 +244,7 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
     };
     const ctx = { ...base, route: r, navigate, reportLink };
     try {
-      const mod = /** @type {any} */ (await import(`./${/** @type {Record<string, string>} */ (VIEWS)[r.view]}.js`));
+      const mod = /** @type {{mount(root: HTMLElement, ctx: import("../lib/types.js").Ctx): unknown}} */ (await import(`./${/** @type {Record<string, string>} */ (VIEWS)[r.view]}.js`));
       if (mine !== token) return;
       root.replaceChildren();
       mounted.handle = (await mod.mount(root, ctx)) ?? null;

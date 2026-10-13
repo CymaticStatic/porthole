@@ -1,8 +1,9 @@
 // One API client per machine. Every call resolves to a result object and never throws:
 //   {ok: true, status, data}   or   {ok: false, status, error}   (status 0 = the machine could not be reached).
 import { copy } from "../lib/copy.js";
+import { isObject } from "../lib/json.js";
 
-/** @typedef {{ok: true, status: number, data: any} | {ok: false, status: number, error: string}} ApiResult */
+/** `data` is whatever JSON hostd sent (`null` for an empty reply): narrow it with lib/json.js before reading a field. @typedef {{ok: true, status: number, data: unknown} | {ok: false, status: number, error: string}} ApiResult */
 /**
  * @typedef {object} Api
  * @property {(path: string) => Promise<ApiResult>} get
@@ -24,16 +25,13 @@ function sentenceFor(status) {
 }
 
 /**
- * @param {{origin: string, fetch?: typeof fetch, timeoutMs?: number, setTimeout?: Function, clearTimeout?: Function}} deps
+ * @param {{origin: string, fetch?: typeof fetch, timeoutMs?: number, setTimeout?: typeof setTimeout, clearTimeout?: typeof clearTimeout}} deps
  * @returns {Api}
  */
 export function createApi({ origin, fetch: fetchFn, timeoutMs = 15000, setTimeout: setT, clearTimeout: clearT }) {
-  /** @type {any} */
-  const doFetch = fetchFn ?? ((/** @type {any[]} */ ...a) => /** @type {any} */ (globalThis.fetch)(...a));
-  /** @type {any} */
-  const startTimer = setT ?? ((/** @type {any[]} */ ...a) => /** @type {any} */ (globalThis.setTimeout)(...a));
-  /** @type {any} */
-  const stopTimer = clearT ?? ((/** @type {any[]} */ ...a) => /** @type {any} */ (globalThis.clearTimeout)(...a));
+  const doFetch = fetchFn ?? ((/** @type {Parameters<typeof fetch>} */ ...a) => globalThis.fetch(...a));
+  const startTimer = setT ?? ((/** @type {Parameters<typeof setTimeout>} */ ...a) => globalThis.setTimeout(...a));
+  const stopTimer = clearT ?? ((/** @type {Parameters<typeof clearTimeout>} */ ...a) => globalThis.clearTimeout(...a));
 
   /**
    * @param {string} method @param {string} path
@@ -64,7 +62,7 @@ export function createApi({ origin, fetch: fetchFn, timeoutMs = 15000, setTimeou
     } finally {
       stopTimer(timer);
     }
-    /** @type {any} */
+    /** @type {unknown} */
     let data = null;
     let parsed = true;
     if (text !== "") {
@@ -74,7 +72,8 @@ export function createApi({ origin, fetch: fetchFn, timeoutMs = 15000, setTimeou
       if (!parsed) return { ok: false, status: res.status, error: copy.apiBadReply };
       return { ok: true, status: res.status, data };
     }
-    const own = parsed && data && typeof data === "object" ? (typeof data.error === "string" && data.error !== "" ? data.error : typeof data.reason === "string" && data.reason !== "" ? data.reason : "") : "";
+    const body = parsed && isObject(data) ? data : null;
+    const own = body ? (typeof body.error === "string" && body.error !== "" ? body.error : typeof body.reason === "string" && body.reason !== "" ? body.reason : "") : "";
     return { ok: false, status: res.status, error: own !== "" ? own : sentenceFor(res.status) };
   }
 

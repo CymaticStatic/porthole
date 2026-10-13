@@ -8,6 +8,7 @@
 import { h } from "../dom/h.js";
 import { createDrafts } from "../lib/drafts.js";
 import { ago, basename } from "../lib/format.js";
+import { asObject, isObject } from "../lib/json.js";
 import { createOutbox, nextAction } from "../lib/outbox.js";
 import { defaultStorage } from "../lib/storage.js";
 import { mount as mountTalk } from "./talk.js";
@@ -42,7 +43,7 @@ function newClientMsgId() {
 }
 
 /**
- * @param {{ctx: any, machine: any, sessionId: string, talkRoot: HTMLElement}} o
+ * @param {{ctx: Pick<import("../lib/types.js").Ctx, "copy" | "events" | "bridge" | "settings">, machine: import("../net/machine.js").Machine, sessionId: string, talkRoot: HTMLElement}} o
  * @returns {{el: HTMLElement, destroy(): void, focus(): void}}
  */
 export function createComposer({ ctx, machine, sessionId, talkRoot }) {
@@ -62,12 +63,12 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
   let lastSent = null;
   /** @type {string | null} */
   let pollId = null;
-  /** @type {any} */
-  let pollTimer = null;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let pollTimer;
   let sheetOpen = false;
   /** @type {{unmount(): void} | null} */
   let talk = null;
-  /** @type {any[]} */
+  /** @type {ReturnType<typeof setTimeout>[]} */
   const timers = [];
 
   // ---- the DOM ------------------------------------------------------------------------------------------------------------------
@@ -89,7 +90,7 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
   const photo = /** @type {HTMLInputElement} */ (
     h("input", { type: "file", class: "visually-hidden", accept: "image/*", tabindex: "-1", "aria-label": copy.choosePhoto, "data-test": "attach-photo" })
   );
-  const anyFile = /** @type {HTMLInputElement} */ (
+  const fileInput = /** @type {HTMLInputElement} */ (
     h("input", { type: "file", class: "visually-hidden", tabindex: "-1", "aria-label": copy.chooseFile, "data-test": "attach-file" })
   );
 
@@ -102,7 +103,7 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     { class: "attach-menu", role: "menu", "data-test": "attach-menu" },
     menuItem(copy.takePhoto, () => (ctx.bridge?.available ? void pick("camera") : camera.click()), "attach-take"),
     menuItem(copy.choosePhoto, () => (ctx.bridge?.available ? void pick("photo") : photo.click()), "attach-choose-photo"),
-    menuItem(copy.chooseFile, () => (ctx.bridge?.available ? void pick("file") : anyFile.click()), "attach-choose-file"),
+    menuItem(copy.chooseFile, () => (ctx.bridge?.available ? void pick("file") : fileInput.click()), "attach-choose-file"),
     canPasteButton ? menuItem(copy.pasteImage, () => void pasteFromClipboard(), "attach-paste") : null,
   );
   menu.hidden = true;
@@ -150,7 +151,7 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     statusEl,
     camera,
     photo,
-    anyFile,
+    fileInput,
   );
 
   // ---- the draft ----------------------------------------------------------------------------------------------------------------
@@ -236,7 +237,7 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     statusEl.hidden = key === null;
     if (key === null) return;
     statusEl.dataset.kind = key;
-    statusEl.append(h("p", { class: "send-title" }, String(copy[key] ?? "")));
+    statusEl.append(h("p", { class: "send-title" }, String(/** @type {Record<string, unknown>} */ (/** @type {unknown} */ (copy))[key] ?? "")));
     if (reason) statusEl.append(h("p", { class: "send-reason", "data-test": "send-reason" }, copy.reasonLine(reason)));
     if (key === "sendFailedTitle") statusEl.append(h("button", { type: "button", class: "composer-button", "data-test": "send-retry", on: { click: () => void send() } }, copy.tryAgain));
   }
@@ -253,7 +254,7 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     const tick = async () => {
       const r = await machine.api.get(`/v1/sends/${encodeURIComponent(id)}`);
       if (!alive || pollId !== id) return;
-      const pending = r.ok ? r.data?.status === "pending" : r.status === 0;
+      const pending = r.ok ? asObject(r.data).status === "pending" : r.status === 0;
       if (pending) {
         pollTimer = setTimeout(tick, POLL_MS);
         return;
@@ -268,21 +269,23 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
   // ---- the send flow ------------------------------------------------------------------------------------------------------------
   /**
    * Applies hostd's answer (or its absence) for a message this composer sent: storage first, then the screen.
-   * @param {import("../lib/outbox.js").OutboxEntry} entry @param {any} answer
+   * @param {import("../lib/outbox.js").OutboxEntry} entry @param {import("../net/api.js").ApiResult} answer
    */
   function settle(entry, answer) {
     const action = nextAction(entry, answer);
     const id = entry.clientMsgId;
-    const status = answer.ok ? answer.data?.status : null;
+    const body = answer.ok ? asObject(answer.data) : {};
+    const status = answer.ok ? body.status : null;
     if (action.outbox === "remove") outbox.remove(id);
     else if (action.poll) outbox.update(id, { status: "pending" });
     if (action.draft === "clear") {
-      drafts.clear(origin, sessionId);
+      drafts.clearIf(origin, sessionId, entry.text);
       drafts.addSent(origin, sessionId, { clientMsgId: id, text: entry.text, at: Date.now(), status: "delivered", reason: null });
+      if (lastSent?.id === id) lastSent = null; // delivered: the same words typed again are a new message, not a repeat
     }
-    /** @type {string | undefined} */
-    const reason = answer.ok ? (status === "refused" || status === "failed" ? answer.data?.reason : undefined) : answer.status === 0 ? undefined : answer.error;
-    if (action.show === "sendFailedTitle") lastSent = { id, text: entry.text };
+    /** @type {unknown} */
+    const reason = answer.ok ? (status === "refused" || status === "failed" ? body.reason : undefined) : answer.status === 0 ? undefined : answer.error;
+    if (action.show === "sendFailedTitle") lastSent = { id, text: entry.text }; // kept only while undelivered, for "Try again"
     if (!alive) return;
     if (action.draft === "clear" && box.value === entry.text) {
       box.value = "";
@@ -291,7 +294,7 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     } else if (action.draft === "clear") {
       saveDraft(); // typed on while it was going out: keep the new words
     }
-    showStatus(action.show, reason);
+    showStatus(action.show, typeof reason === "string" ? reason : undefined);
     if (action.poll) startPoll(id);
     if (sheetOpen) renderSent();
   }
@@ -312,7 +315,7 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     stopPoll();
     busy = true;
     updateControls();
-    /** @type {any} */
+    /** @type {import("../net/api.js").ApiResult} */
     const answer =
       machine.state() === "up"
         ? await machine.api.post(`${sessionPath}/send`, { text, clientMsgId: id })
@@ -323,11 +326,15 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
   }
 
   // ---- hostd re-posted a held message while this chat was open (the app applied it; this only refreshes the screen) ---------------
-  const offResult = ctx.events.on("send-result", (/** @type {any} */ ev) => {
-    if (!alive || !ev || ev.sessionId !== sessionId || !ev.action) return;
+  const offResult = ctx.events.on("send-result", (data) => {
+    if (!alive || !isObject(data)) return;
+    const ev = /** @type {import("../net/machine.js").SendResult} */ (/** @type {unknown} */ (data));
+    if (ev.sessionId !== sessionId || !ev.action) return;
     const action = ev.action;
     if (action.draft === "clear") {
-      if (lastSent && lastSent.id === ev.clientMsgId && box.value !== lastSent.text) {
+      const typedOn = lastSent !== null && lastSent.id === ev.clientMsgId && box.value !== lastSent.text;
+      if (lastSent?.id === ev.clientMsgId) lastSent = null; // delivered
+      if (typedOn) {
         saveDraft(); // typed on while it was held: keep the new words
       } else {
         const d = drafts.get(origin, sessionId);
@@ -358,11 +365,12 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     const r = await machine.api.upload(file, name);
     uploading--;
     if (!alive) return;
-    if (r.ok && typeof r.data?.path === "string") {
-      insertPath(r.data.path);
+    const path = r.ok ? asObject(r.data).path : undefined;
+    if (typeof path === "string") {
+      insertPath(path);
       if (uploading === 0) attachProblem("");
     } else {
-      attachProblem(r.status === 0 || !r.error ? copy.uploadFailed : `${copy.uploadFailed} ${copy.reasonLine(r.error)}`);
+      attachProblem(r.ok || r.status === 0 || !r.error ? copy.uploadFailed : `${copy.uploadFailed} ${copy.reasonLine(r.error)}`);
     }
   }
 
@@ -375,7 +383,8 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
   async function pick(source) {
     try {
       const r = await ctx.bridge.call("pickFile", { source });
-      if (r && typeof r.path === "string") insertPath(r.path);
+      const path = asObject(r).path;
+      if (typeof path === "string") insertPath(path);
     } catch {
       // the person closed the picker: nothing to add
     }
@@ -395,7 +404,7 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
     }
   }
 
-  for (const input of [camera, photo, anyFile]) {
+  for (const input of [camera, photo, fileInput]) {
     input.addEventListener("change", () => {
       uploadAll(input.files);
       input.value = "";
@@ -410,8 +419,9 @@ export function createComposer({ ctx, machine, sessionId, talkRoot }) {
   });
 
   const offShare = ctx.bridge?.available
-    ? ctx.bridge.on("share", (/** @type {any} */ d) => {
-        if (d && typeof d.path === "string") insertPath(d.path);
+    ? ctx.bridge.on("share", (data) => {
+        const path = asObject(data).path;
+        if (typeof path === "string") insertPath(path);
       })
     : () => {};
 

@@ -2,24 +2,27 @@
 // Every press is `POST /v1/sessions/:id/keys {keys: steps}`. There is no Ctrl+C button (chatKeyRow leaves it out).
 // While the session is in live voice at the desk hostd refuses keys, so the row is disabled and says why.
 import { h } from "../dom/h.js";
+import { asObject } from "../lib/json.js";
 import { chatKeyRow, parseSteps } from "../lib/steps.js";
 
 /** The six built-in buttons, in order; their `data-key` is the key name, never the label. */
 const BUILT_IN = ["Esc", "Up", "Down", "Enter", "Tab", "Stop"];
+let noteSeq = 0;
 const ERROR_MS = 6000;
 
 /**
- * @param {{ctx: any, machine: any, sessionId: string}} o
+ * @param {{ctx: Pick<import("../lib/types.js").Ctx, "copy">, machine: import("../net/machine.js").Machine, sessionId: string}} o
  * @returns {{el: HTMLElement, destroy(): void}}
  */
 export function createKeyRow({ ctx, machine, sessionId }) {
   const { copy } = ctx;
+  const NOTE_ID = `keyrow-note-${++noteSeq}`;
   /** @type {{label: string, steps: string[], stop?: boolean}[]} */
   let buttons = chatKeyRow([]);
   let liveVoice = false;
   let alive = true;
-  /** @type {any} */
-  let errorTimer = null;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let errorTimer;
 
   const row = h("div", { class: "keyrow", "data-test": "keyrow", role: "group", "aria-label": copy.keyRow });
   const problem = h("p", { class: "keyrow-problem", "data-test": "keyrow-error", role: "status" });
@@ -72,28 +75,33 @@ export function createKeyRow({ ctx, machine, sessionId }) {
 
   function readLiveVoice() {
     const sessions = machine.tree()?.sessions;
-    const mine = Array.isArray(sessions) ? sessions.find((/** @type {any} */ s) => s && s.id === sessionId) : null;
+    const mine = Array.isArray(sessions) ? sessions.find((s) => s && s.id === sessionId) : null;
     const next = mine?.liveVoice === true;
     if (next === liveVoice) return;
     liveVoice = next;
     for (const b of /** @type {NodeListOf<HTMLButtonElement>} */ (row.querySelectorAll("button"))) b.disabled = liveVoice;
     note?.remove();
     note = null;
+    row.removeAttribute("aria-describedby");
     if (liveVoice) {
-      note = h("p", { class: "keyrow-note", "data-test": "keyrow-note" }, copy.liveVoiceKeys);
+      note = h("p", { class: "keyrow-note", id: NOTE_ID, "data-test": "keyrow-note" }, copy.liveVoiceKeys);
+      row.setAttribute("aria-describedby", NOTE_ID);
       row.after(note);
     }
   }
 
   async function loadShortcuts() {
     const r = await machine.api.get("/v1/shortcuts");
-    if (!alive || !r.ok || !Array.isArray(r.data?.shortcuts)) return;
+    if (!alive || !r.ok) return;
+    const data = asObject(r.data);
+    if (!Array.isArray(data.shortcuts)) return;
     /** @type {{name: string, steps: string[]}[]} */
     const shortcuts = [];
-    for (const s of r.data.shortcuts) {
-      if (!s || typeof s.label !== "string" || typeof s.steps !== "string") continue;
-      const parsed = parseSteps(s.steps, { allowPrefix: true });
-      if (parsed.ok) shortcuts.push({ name: s.label, steps: parsed.steps });
+    for (const s of data.shortcuts) {
+      const sc = asObject(s);
+      if (typeof sc.label !== "string" || typeof sc.steps !== "string") continue;
+      const parsed = parseSteps(sc.steps, { allowPrefix: true });
+      if (parsed.ok) shortcuts.push({ name: sc.label, steps: parsed.steps });
     }
     buttons = chatKeyRow(shortcuts);
     renderButtons();

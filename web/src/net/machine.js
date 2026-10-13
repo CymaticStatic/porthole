@@ -1,8 +1,25 @@
 // One link per machine: its API client, its events socket, its latest session tree and inbox, and the
 // only code that sends held outbox entries (see "Send flow" in the plan).
+import { asObject, isObject, parseJson } from "../lib/json.js";
 import { nextAction } from "../lib/outbox.js";
 import { createApi } from "./api.js";
 import { openSocket } from "./socket.js";
+
+/**
+ * hostd's events socket says nothing while nothing changes, so the page asks: `{"type":"ping"}` every 10 s. A hostd that answers
+ * with `{"type":"pong"}` is then held to it (25 s of silence means the link is redialled); one that does not is left alone.
+ * @type {import("./socket.js").Heartbeat}
+ */
+const HEARTBEAT = {
+  ping: JSON.stringify({ type: "ping" }),
+  isPong(data) {
+    if (typeof data !== "string") return false;
+    const msg = parseJson(data);
+    return isObject(msg) && msg.type === "pong";
+  },
+  pingMs: 10_000,
+  silentMs: 25_000,
+};
 
 /** @typedef {import("./socket.js").LinkState} LinkState */
 /** @typedef {import("../lib/outbox.js").NextAction} NextAction */
@@ -10,9 +27,9 @@ import { openSocket } from "./socket.js";
 /**
  * @typedef {object} MachineDeps
  * @property {typeof fetch} fetch
- * @property {any} WebSocket
- * @property {Function} setTimeout
- * @property {Function} clearTimeout
+ * @property {typeof WebSocket} WebSocket
+ * @property {typeof setTimeout} setTimeout
+ * @property {typeof clearTimeout} clearTimeout
  * @property {ReturnType<typeof import("../lib/outbox.js").createOutbox>} outbox
  */
 /**
@@ -20,8 +37,8 @@ import { openSocket } from "./socket.js";
  * @property {string} name
  * @property {string} origin
  * @property {() => LinkState} state
- * @property {() => any} tree the latest `sessions` push from hostd, or null before the first one
- * @property {() => any[]} inbox
+ * @property {() => import("../lib/tree.js").TreeLike | null} tree the latest `sessions` push from hostd, or null before the first one
+ * @property {() => import("../lib/inboxmodel.js").InboxItemLike[]} inbox
  * @property {import("./api.js").Api} api
  * @property {(fn: () => void) => () => void} subscribe
  * @property {(fn: (r: SendResult) => void) => () => void} onSendResult
@@ -45,9 +62,9 @@ export function createMachine({ name, origin, deviceId, deps }) {
   const api = createApi({ origin, fetch: deps.fetch });
   /** @type {LinkState} */
   let state = "connecting";
-  /** @type {any} */
+  /** @type {import("../lib/tree.js").TreeLike | null} */
   let tree = null;
-  /** @type {any[]} */
+  /** @type {import("../lib/inboxmodel.js").InboxItemLike[]} */
   let inbox = [];
   let lastNotifyId = 0;
   /** @type {ReturnType<typeof openSocket> | null} */
@@ -66,17 +83,15 @@ export function createMachine({ name, origin, deviceId, deps }) {
   /** @param {unknown} raw */
   function onMessage(raw) {
     if (typeof raw !== "string") return;
-    /** @type {any} */
-    let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
-    if (!msg || typeof msg !== "object") return;
-    if (msg.type === "sessions" && msg.tree && typeof msg.tree === "object") {
-      tree = msg.tree;
+    const msg = parseJson(raw);
+    if (!isObject(msg)) return;
+    if (msg.type === "sessions" && isObject(msg.tree)) {
+      tree = /** @type {import("../lib/tree.js").TreeLike} */ (msg.tree);
       changed();
     } else if (msg.type === "inbox" && Array.isArray(msg.items)) {
-      inbox = msg.items;
+      inbox = /** @type {import("../lib/inboxmodel.js").InboxItemLike[]} */ (msg.items);
       changed();
-    } else if (msg.type === "notify" && Number.isInteger(msg.id)) {
+    } else if (msg.type === "notify" && typeof msg.id === "number" && Number.isInteger(msg.id)) {
       // The page never shows notifications (the phone app's service does); it only acknowledges them so hostd stops replaying.
       lastNotifyId = Math.max(lastNotifyId, msg.id);
       socket?.send(JSON.stringify({ type: "ack", id: msg.id }));
@@ -85,8 +100,9 @@ export function createMachine({ name, origin, deviceId, deps }) {
 
   async function refreshInbox() {
     const r = await api.get("/v1/inbox");
-    if (r.ok && r.data && Array.isArray(r.data.items)) {
-      inbox = r.data.items;
+    const data = r.ok ? asObject(r.data) : null;
+    if (data && Array.isArray(data.items)) {
+      inbox = /** @type {import("../lib/inboxmodel.js").InboxItemLike[]} */ (data.items);
       changed();
     }
   }
@@ -150,6 +166,7 @@ export function createMachine({ name, origin, deviceId, deps }) {
           void flushHeld();
         },
         onMessage,
+        heartbeat: HEARTBEAT,
       });
     },
     stop() {

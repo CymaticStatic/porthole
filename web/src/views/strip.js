@@ -9,7 +9,7 @@ const SHOWN_AFTER_MS = 2000;
 
 /**
  * @param {{fleet: {links(): {name: string, state: string, retry: () => void}[], subscribe(fn: () => void): () => void},
- *   setTimeout?: (fn: () => void, ms: number) => any, clearTimeout?: (id: any) => void, now?: () => number}} o
+ *   setTimeout?: typeof setTimeout, clearTimeout?: typeof clearTimeout, now?: () => number}} o
  * @returns {{el: HTMLElement, destroy(): void}}
  */
 export function createStrip({ fleet, setTimeout: setT = (fn, ms) => globalThis.setTimeout(fn, ms), clearTimeout: clearT = (id) => globalThis.clearTimeout(id), now = Date.now }) {
@@ -23,7 +23,8 @@ export function createStrip({ fleet, setTimeout: setT = (fn, ms) => globalThis.s
   let failing = [];
   /** @type {"hidden" | "down" | "up"} */
   let mode = "hidden";
-  let timer = /** @type {any} */ (null);
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let timer = null;
 
   const stopTimer = () => {
     if (timer !== null) { clearT(timer); timer = null; }

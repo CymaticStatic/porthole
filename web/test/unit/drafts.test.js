@@ -50,3 +50,20 @@ test("corrupt sent history reads as empty and clear removes the draft", () => {
   d.put(O, S, "x", []); d.clear(O, S);
   expect(d.get(O, S)).toBeNull();
 });
+
+test("clearIf clears only a draft that still equals the delivered text", () => {
+  const d = createDrafts(memoryStorage());
+  d.put(O, S, "A", []);
+  d.clearIf(O, S, "A");
+  expect(d.get(O, S)).toBeNull();
+});
+
+test("clearIf keeps what was typed while A was held (typed B while A was held)", () => {
+  const d = createDrafts(memoryStorage());
+  d.put(O, S, "A", []);
+  d.put(O, S, "B", ["/tmp/b.png"]); // the person went on typing before A's late answer
+  d.clearIf(O, S, "A");
+  expect(d.get(O, S)).toMatchObject({ text: "B", files: ["/tmp/b.png"] });
+  d.clearIf(O, "tmux:abc:other:0.0", "B"); // another session's draft is never touched
+  expect(d.get(O, S)?.text).toBe("B");
+});

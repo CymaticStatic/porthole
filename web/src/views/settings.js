@@ -5,14 +5,10 @@
 import { h } from "../dom/h.js";
 import { copy } from "../lib/copy.js";
 import { ACTIONS, DEFAULT_GESTURES, FONT_STEPS, mergeGestureMap, nextFontSize } from "../lib/gestures.js";
+import { asObject } from "../lib/json.js";
 import { parseSteps } from "../lib/steps.js";
 
-/**
- * @typedef {Record<string, any>} SettingsObject
- * @typedef {{get(): SettingsObject, set(patch: SettingsObject): void, subscribe(fn: (s: SettingsObject) => void): () => void}} SettingsStore
- * @typedef {{available: boolean, call(method: string, args?: unknown): Promise<any>}} BridgeLike
- * @typedef {{fleet: ReturnType<typeof import("../net/fleet.js").createFleet>, route: {view: string, machine?: string}, settings: SettingsStore, bridge: BridgeLike}} Ctx
- */
+/** @typedef {Pick<import("../lib/types.js").Ctx, "fleet" | "settings" | "bridge"> & {route: {view: string, machine?: string}}} Ctx */
 
 /** The five text sizes (87.5 %, 100 %, 112.5 %, 125 %, 150 %): multiplied into the page's base size as `--fs-scale`. */
 export const TEXT_SCALES = Object.freeze([0.875, 1, 1.125, 1.25, 1.5]);
@@ -117,7 +113,8 @@ export function mount(root, ctx) {
     const row = h("div", { class: "set-row", "data-test": "machine-row", "data-machine": m.name },
       h("span", { class: "set-row-text" }, h("strong", {}, m.name), h("span", { class: "set-sub" }, hostOf(m.origin)), kept));
     ctx.fleet.machine(m.name)?.api.get("/v1/voice/kept").then((r) => {
-      if (alive && r.ok && Array.isArray(r.data?.files)) kept.textContent = copy.voiceKeptCount(r.data.files.length);
+      const files = r.ok ? asObject(r.data).files : undefined;
+      if (alive && Array.isArray(files)) kept.textContent = copy.voiceKeptCount(files.length);
     }).catch(() => {});
     if (!readOnly && machineList.length > 1) {
       row.append(h("button", {
@@ -216,10 +213,10 @@ export function mount(root, ctx) {
     const row = toggleRow({
       label,
       test,
-      checked: store.get()[key] ?? fallback,
+      checked: Boolean(store.get()[key] ?? fallback),
       onChange: (on) => store.set({ [key]: on }),
     });
-    syncs.push(() => { row.input.checked = store.get()[key] ?? fallback; });
+    syncs.push(() => { row.input.checked = Boolean(store.get()[key] ?? fallback); });
     return row.el;
   };
   const talkSection = section(copy.talkMode,
@@ -267,7 +264,8 @@ export function mount(root, ctx) {
   syncs.push(() => {
     // Leave the box alone while Ben is typing in it; it already holds what he typed.
     if (document.activeElement === prefixInput) return;
-    prefixInput.value = typeof store.get().tmuxPrefix === "string" ? store.get().tmuxPrefix : DEFAULT_PREFIX;
+    const saved = store.get().tmuxPrefix;
+    prefixInput.value = typeof saved === "string" ? saved : DEFAULT_PREFIX;
     prefixInput.removeAttribute("aria-invalid");
     prefixError.hidden = true;
   });

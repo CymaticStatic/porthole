@@ -9,6 +9,7 @@ import { h } from "../dom/h.js";
 import { copy } from "../lib/copy.js";
 import { ago, basename } from "../lib/format.js";
 import { answerMode, contextRing } from "../lib/inboxmodel.js";
+import { asObject } from "../lib/json.js";
 import { href } from "../lib/route.js";
 
 /** @typedef {import("../lib/inboxmodel.js").Item & {sessionId: string, kind: string, title: string, body: string}} Card */
@@ -111,7 +112,7 @@ export function mount(root, ctx) {
     patch(key, { busy: true, notice: "", detail: "" });
     const m = fleet.machine(item.machine);
     const r = m ? await m.api.post(`/v1/inbox/${encodeURIComponent(item.id)}/answer`, body) : null;
-    if (r !== null && r.ok && r.data?.status === "sent") {
+    if (r !== null && r.ok && asObject(r.data).status === "sent") {
       typed.delete(key);
       patch(key, { busy: false, answered: label });
     } else {
@@ -125,7 +126,7 @@ export function mount(root, ctx) {
     patch(key, { busy: true, notice: "", detail: "" });
     const m = fleet.machine(item.machine);
     const r = m ? await m.api.post(`/v1/sessions/${encodeURIComponent(item.sessionId)}/keys`, { keys: ["Esc"] }) : null;
-    if (r !== null && r.ok && r.data?.status === "sent") patch(key, { busy: false });
+    if (r !== null && r.ok && asObject(r.data).status === "sent") patch(key, { busy: false });
     else patch(key, { busy: false, notice: copy.stopFailed, detail: detailOf(r) });
   }
 
@@ -135,7 +136,7 @@ export function mount(root, ctx) {
     const m = fleet.machine(item.machine);
     const r = m ? await m.api.post(`/v1/inbox/${encodeURIComponent(item.id)}/archive`) : null;
     // 404: hostd no longer has it live (archived somewhere else); the card should go either way.
-    if (r !== null && ((r.ok && r.data?.archived === true) || (!r.ok && r.status === 404))) {
+    if (r !== null && ((r.ok && asObject(r.data).archived === true) || (!r.ok && r.status === 404))) {
       hidden.add(key);
       render();
       return true;
@@ -394,8 +395,10 @@ export function mount(root, ctx) {
     const rows = [];
     let failed = false;
     for (const { name, r } of found) {
-      if (!r.ok || !Array.isArray(r.data?.items)) { failed = true; continue; }
-      for (const it of r.data.items) {
+      const items = r.ok ? asObject(r.data).items : undefined;
+      if (!Array.isArray(items)) { failed = true; continue; }
+      for (const raw of items) {
+        const it = asObject(raw);
         rows.push({ machine: name, title: String(it.title ?? ""), project: basename(String(it.project ?? "")), at: Number(it.archivedAt ?? it.updatedAt) });
       }
     }

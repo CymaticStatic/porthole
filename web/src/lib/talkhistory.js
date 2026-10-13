@@ -1,3 +1,5 @@
+import { asObject } from "./json.js";
+
 /** @typedef {import("./storage.js").Store} Store */
 /** @typedef {{text: string, at: number, origin: string, sessionId: string}} TalkEntry */
 
@@ -6,8 +8,8 @@ const CAP = 50;
 
 /** @param {unknown} v @returns {TalkEntry | null} the entry when it has the right shape, else null */
 function clean(v) {
-  const e = /** @type {any} */ (v);
-  if (!e || typeof e !== "object" || typeof e.text !== "string" || e.text === "") return null;
+  const e = asObject(v);
+  if (typeof e.text !== "string" || e.text === "") return null;
   return {
     text: e.text,
     at: Number(e.at) || 0,

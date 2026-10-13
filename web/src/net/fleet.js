@@ -1,5 +1,6 @@
 // The device's machines: one link each (started at creation), merged read-only views for the drawer and
 // inbox, and the links that views (chat, terminal) report for the reconnect strip.
+import { asObject } from "../lib/json.js";
 import { groupInbox } from "../lib/inboxmodel.js";
 import { buildSidebar } from "../lib/tree.js";
 import { createApi } from "./api.js";
@@ -8,11 +9,12 @@ import { createMachine } from "./machine.js";
 /** @typedef {import("./socket.js").LinkState} LinkState */
 /** @typedef {import("./machine.js").Machine} Machine */
 /** @typedef {{name: string, state: LinkState, retry: () => void}} Link */
+/** @typedef {{addEventListener(type: string, fn: () => void): void, removeEventListener(type: string, fn: () => void): void}} Listenable */
 /**
  * `deps` goes to every machine (`fetch`, `WebSocket`, `setTimeout`, `clearTimeout`, `outbox`). `window` and `bridge`
  * are optional: when present the fleet nudges every link on `online`, on the page becoming visible, and on the
  * bridge's `network` event.
- * @typedef {import("./machine.js").MachineDeps & {window?: any, bridge?: {available: boolean, on(event: string, fn: (data: any) => void): () => void}}} FleetDeps
+ * @typedef {import("./machine.js").MachineDeps & {window?: Listenable & {document?: Listenable & {visibilityState?: string}}, bridge?: Pick<import("../lib/types.js").Bridge, "available" | "on">}} FleetDeps
  */
 
 const MACHINES_KEY = "porthole:machines";
@@ -30,7 +32,7 @@ function isMachineList(v) {
 /**
  * The machine list. Android app: from the bridge. Browser: `porthole:machines`, else first-run discovery from this
  * page's own origin plus the peers its hostd lists; a discovery that could not reach this origin is not saved.
- * @param {{bridge?: {available: boolean, call(method: string, args?: unknown): Promise<any>}, storage: {getItem(k: string): string | null, setItem(k: string, v: string): void}, origin: string, fetch: typeof globalThis.fetch}} o
+ * @param {{bridge?: Pick<import("../lib/types.js").Bridge, "available" | "call">, storage: {getItem(k: string): string | null, setItem(k: string, v: string): void}, origin: string, fetch: typeof globalThis.fetch}} o
  * @returns {Promise<{name: string, origin: string}[]>}
  */
 export async function loadMachines({ bridge, storage, origin, fetch }) {
@@ -44,14 +46,20 @@ export async function loadMachines({ bridge, storage, origin, fetch }) {
     if (isMachineList(saved) && saved.length > 0) return saved.map((m) => ({ name: m.name, origin: m.origin }));
   } catch { /* unreadable: discover again */ }
 
+  /** The name a machine reports about itself, else the first part of its address. @param {import("./api.js").ApiResult} r @param {string} at */
+  const nameFrom = (r, at) => {
+    const name = r.ok ? asObject(r.data).name : undefined;
+    return typeof name === "string" && name !== "" ? name : hostOf(at);
+  };
   const self = await createApi({ origin, fetch }).get("/v1/machine");
   /** @type {{name: string, origin: string}[]} */
-  const list = [{ name: self.ok && typeof self.data?.name === "string" && self.data.name !== "" ? self.data.name : hostOf(origin), origin }];
+  const list = [{ name: nameFrom(self, origin), origin }];
   const cfg = await createApi({ origin, fetch }).get("/v1/config");
-  const peers = cfg.ok && Array.isArray(cfg.data?.peers) ? /** @type {unknown[]} */ (cfg.data.peers).filter((p) => typeof p === "string" && p !== origin) : [];
+  const configured = cfg.ok ? asObject(cfg.data).peers : undefined;
+  const peers = Array.isArray(configured) ? configured.filter((/** @type {unknown} */ p) => typeof p === "string" && p !== origin) : [];
   const found = await Promise.all(/** @type {string[]} */ (peers).map(async (peer) => {
     const r = await createApi({ origin: peer, fetch }).get("/v1/machine");
-    return { name: r.ok && typeof r.data?.name === "string" && r.data.name !== "" ? r.data.name : hostOf(peer), origin: peer };
+    return { name: nameFrom(r, peer), origin: peer };
   }));
   for (const f of found) if (!list.some((m) => m.origin === f.origin)) list.push(f);
   if (self.ok) {

@@ -5,6 +5,7 @@ import { Terminal } from "../../vendor/xterm/lib/xterm.mjs";
 import { h } from "../dom/h.js";
 import { copy } from "../lib/copy.js";
 import { createCtrlLatch, createRecognizer, gestureAction, mergeGestureMap, navPlan, nextFontSize, wheelBytes } from "../lib/gestures.js";
+import { asObject } from "../lib/json.js";
 import { href } from "../lib/route.js";
 import { parseSteps, stepBytes, stepLabel } from "../lib/steps.js";
 import { neighbour } from "../lib/tree.js";
@@ -22,9 +23,6 @@ const DEFAULT_FONT_PX = 14;
 const FLASH_MS = 4000;
 const NO_SESSION = "no such session";
 const SS3 = "\x1bO";
-
-/** @param {string} s */
-const capitalise = (s) => (s === "" ? s : s[0].toUpperCase() + s.slice(1));
 
 /** @param {unknown} v @returns {number} */
 function fontPx(v) {
@@ -138,8 +136,8 @@ export function mount(root, ctx) {
     h("div", { class: "term-row" },
       button("Paste", copy.paste, null, () => { void pasteFromClipboard(); }),
       keyboardButton,
-      button("Smaller", "A−", copy.smallerText, () => stepFont(-1), false),
-      button("Bigger", "A+", copy.biggerText, () => stepFont(1), false),
+      button("Smaller", copy.smallerTextLabel, copy.smallerText, () => stepFont(-1), false),
+      button("Bigger", copy.biggerTextLabel, copy.biggerText, () => stepFont(1), false),
       shortcutsButton,
     ),
   );
@@ -195,7 +193,7 @@ export function mount(root, ctx) {
 
   /** The banner under the top bar: a plain headline, then hostd's own sentence when there is one. @param {string} headline @param {string} [detail] */
   function showNote(headline, detail) {
-    note.replaceChildren(h("strong", {}, headline), ...(detail ? [h("span", {}, capitalise(detail))] : []));
+    note.replaceChildren(h("strong", {}, headline), ...(detail ? [h("span", {}, detail)] : []));
     note.hidden = false;
   }
 
@@ -222,7 +220,7 @@ export function mount(root, ctx) {
     return typeof p === "string" && p !== "" ? p : "C-b";
   }
 
-  /** @param {string} step @returns {Uint8Array | null} */
+  /** @param {string} step @returns {Uint8Array<ArrayBuffer> | null} */
   function bytesFor(step) {
     for (const prefix of [prefixKey(), "C-b"]) {
       try { return stepBytes(step, prefix); } catch { /* try the default prefix, then give up on this step */ }
@@ -230,7 +228,7 @@ export function mount(root, ctx) {
     return null;
   }
 
-  /** @param {Uint8Array} bytes */
+  /** @param {Uint8Array<ArrayBuffer>} bytes */
   function sendBytes(bytes) {
     if (readonly || ended) return;
     socket.send(bytes);
@@ -290,8 +288,9 @@ export function mount(root, ctx) {
   function sessionKind() {
     if (screenMode) return "herdr";
     const sessions = machine?.tree()?.sessions;
-    const found = Array.isArray(sessions) ? sessions.find((/** @type {{id?: string}} */ s) => s.id === sessionId) : undefined;
-    if (found && (found.kind === "tmux" || found.kind === "herdr")) return found.kind;
+    const found = Array.isArray(sessions) ? sessions.find((s) => s.id === sessionId) : undefined;
+    const kind = found?.where.kind;
+    if (kind === "tmux" || kind === "herdr") return kind;
     return sessionId?.startsWith("herdr") ? "herdr" : "tmux";
   }
 
@@ -325,7 +324,7 @@ export function mount(root, ctx) {
     if (!msg || typeof msg !== "object") return;
     if (msg.type === "readonly") {
       setReadonly(true);
-      showNote(copy.terminalReadOnly, typeof msg.reason === "string" ? msg.reason : undefined);
+      showNote(copy.terminalReadOnly, typeof msg.reason === "string" ? copy.reasonLine(msg.reason) || undefined : undefined);
     } else if (msg.type === "screen" && typeof msg.text === "string") {
       renderScreen(msg.text);
     } else if (msg.type === "error") {
@@ -475,7 +474,7 @@ export function mount(root, ctx) {
     list.replaceChildren(...items.map((/** @type {{label?: unknown, steps?: unknown}} */ s) => {
       const label = typeof s.label === "string" ? s.label : "";
       const parsed = parseSteps(typeof s.steps === "string" ? s.steps : "", { allowPrefix: true });
-      const detail = parsed.ok ? parsed.steps.map(stepLabel).join(", ") : parsed.reason;
+      const detail = parsed.ok ? parsed.steps.map(stepLabel).join(", ") : copy.reasonLine(parsed.reason);
       return h("button", {
         type: "button",
         class: "term-shortcut",
@@ -507,8 +506,8 @@ export function mount(root, ctx) {
     closeButton.focus();
     void machine?.api.get("/v1/shortcuts").then((r) => {
       if (token !== panelToken || ended) return;
-      if (r.ok) fillShortcuts(list, r.data?.shortcuts);
-      else list.replaceChildren(h("p", { class: "term-panel-note" }, r.error));
+      if (r.ok) fillShortcuts(list, asObject(r.data).shortcuts);
+      else list.replaceChildren(h("p", { class: "term-panel-note" }, copy.shortcutsFailed), ...(r.error ? [h("p", { class: "term-panel-note" }, copy.reasonLine(r.error))] : []));
     });
   }
 

@@ -43,7 +43,7 @@ test("gesture actions have the plain names Settings shows, one per action", () =
 test("strings with values", () => {
   expect(copy.cannotReach("testlaptop")).toBe("Can't reach testlaptop. It may be asleep or offline. Porthole keeps trying.");
   expect(copy.contextLeft(40)).toBe("40% of the context left");
-  expect(copy.contextLeftWarn(12)).toBe("12 % context left");
+  expect(copy.contextLeftWarn(12)).toBe("12% context left");
   expect(copy.answered("Large")).toBe("Answered: Large");
   expect(copy.restartNeeded("testdesk")).toBe("Saved. Restart Porthole on testdesk for this to take effect.");
 });

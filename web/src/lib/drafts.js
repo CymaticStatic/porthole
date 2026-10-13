@@ -1,3 +1,5 @@
+import { asObject } from "./json.js";
+
 /** @typedef {import("./storage.js").Store} Store */
 /** @typedef {{text: string, files: string[], updatedAt: number}} Draft */
 /** @typedef {{clientMsgId: string, text: string, at: number, status: string, reason: string | null}} SentItem */
@@ -27,9 +29,9 @@ export function createDrafts(store, now = Date.now) {
   return {
     /** @param {string} origin @param {string} sessionId @returns {Draft | null} */
     get(origin, sessionId) {
-      const v = /** @type {any} */ (readJson(store, draftKey(origin, sessionId)));
-      if (!v || typeof v !== "object" || typeof v.text !== "string" || !Array.isArray(v.files)) return null;
-      return { text: v.text, files: v.files.filter((/** @type {unknown} */ f) => typeof f === "string"), updatedAt: Number(v.updatedAt) || 0 };
+      const v = asObject(readJson(store, draftKey(origin, sessionId)));
+      if (typeof v.text !== "string" || !Array.isArray(v.files)) return null;
+      return { text: v.text, files: v.files.filter((f) => typeof f === "string"), updatedAt: Number(v.updatedAt) || 0 };
     },
     /**
      * An empty text with no files removes the key. A failed write (quota) is reported, never thrown.
@@ -49,6 +51,13 @@ export function createDrafts(store, now = Date.now) {
     /** @param {string} origin @param {string} sessionId */
     clear(origin, sessionId) {
       try { store.removeItem(draftKey(origin, sessionId)); } catch { /* nothing to clear */ }
+    },
+    /**
+     * Clears the draft only when it still holds exactly the text that was delivered; words typed meanwhile stay.
+     * @param {string} origin @param {string} sessionId @param {string} text the delivered text
+     */
+    clearIf(origin, sessionId, text) {
+      if (this.get(origin, sessionId)?.text === text) this.clear(origin, sessionId);
     },
     /** @param {string} origin @param {string} sessionId @returns {SentItem[]} newest last */
     sent(origin, sessionId) {

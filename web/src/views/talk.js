@@ -5,6 +5,7 @@
 import { h } from "../dom/h.js";
 import { finishedReplies } from "../lib/chatmodel.js";
 import { ago } from "../lib/format.js";
+import { asObject } from "../lib/json.js";
 import { createSilence } from "../lib/silence.js";
 import { readAllUtterances, summaryUtterances } from "../lib/speech.js";
 import { defaultStorage } from "../lib/storage.js";
@@ -14,12 +15,9 @@ import { encodeWav, resample } from "../lib/wav.js";
 /** @typedef {import("../net/api.js").Api} Api */
 /**
  * What this view needs of the app context.
- * @typedef {object} Ctx
- * @property {typeof import("../lib/copy.js").copy} copy
- * @property {{get(): Record<string, any>}} settings
- * @property {{available: boolean, call(method: string, args?: unknown): Promise<any>, on(event: string, fn: (data: any) => void): () => void} | null | undefined} [bridge]
+ * @typedef {Pick<import("../lib/types.js").Ctx, "copy" | "settings"> & {bridge?: import("../lib/types.js").Bridge | null}} Ctx
  */
-/** @typedef {{on(name: string, fn: (data: any) => void): () => void}} ChatEvents `items` carries what `chatmodel.append` returned for a live push (never a backlog or an older page). */
+/** @typedef {{on(name: "items", fn: (items: import("../lib/chatmodel.js").ChatItem[]) => void): () => void}} ChatEvents `items` carries what `chatmodel.append` returned for a live push (never a backlog or an older page). */
 /**
  * @typedef {object} ReadAloud
  * @property {(markdown: string) => void} readAll speaks the whole reply, or stops when something is being read
@@ -232,7 +230,7 @@ async function startWebRecorder({ autoStop, onLevel, onAutoStop }) {
   /** @type {AudioContext} */
   let audio;
   try {
-    const Ctor = globalThis.AudioContext ?? /** @type {any} */ (globalThis).webkitAudioContext;
+    const Ctor = globalThis.AudioContext ?? /** @type {{webkitAudioContext: typeof AudioContext}} */ (/** @type {unknown} */ (globalThis)).webkitAudioContext;
     audio = new Ctor();
     await audio.resume();
   } catch (e) {
@@ -493,7 +491,8 @@ export function mount(root, ctx, opts) {
     error = null;
     if (!closed) render();
     const res = await opts.api.wav(/** @type {BodyInit} */ (/** @type {unknown} */ (pendingWav)));
-    const text = res.ok && typeof res.data?.text === "string" ? res.data.text.trim() : "";
+    const said = res.ok ? asObject(res.data).text : undefined;
+    const text = typeof said === "string" ? said.trim() : "";
     if (!res.ok || text === "") {
       fail(copy.voiceFailed, res.ok ? "" : res.error);
       return;
@@ -540,7 +539,7 @@ export function mount(root, ctx, opts) {
     if (e.key !== "Tab") return;
     const stops = [mic, retry, ...recentList.querySelectorAll("button"), closeBtn].filter((el) => !el.hidden && !(el instanceof HTMLButtonElement && el.disabled) && el.offsetParent !== null);
     if (stops.length === 0) return;
-    const at = stops.indexOf(/** @type {any} */ (document.activeElement));
+    const at = stops.indexOf(/** @type {HTMLElement} */ (document.activeElement));
     const nextAt = e.shiftKey ? (at <= 0 ? stops.length - 1 : at - 1) : (at < 0 || at === stops.length - 1 ? 0 : at + 1);
     e.preventDefault();
     stops[nextAt].focus();

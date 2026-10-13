@@ -4,6 +4,9 @@ import { marked } from "../../vendor/marked/lib/marked.esm.js";
 
 /**
  * @typedef {string | {t: string, a?: Record<string, string>, c?: Node[]}} Node
+ * @typedef {{tokens?: Tok[]}} Cell one table cell
+ * @typedef {{type: string, raw?: string, text?: string, tokens?: Tok[], items?: Tok[], depth?: number, ordered?: boolean, checked?: boolean, href?: string, header?: Cell[], rows?: Cell[][]}} Tok
+ *   the fields of a `marked` token that are read here; every other field is ignored
  */
 
 const SAFE_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
@@ -29,7 +32,7 @@ function decodeEntities(s) {
   });
 }
 
-/** @param {any[] | undefined} tokens @returns {Node[]} */
+/** @param {Tok[] | undefined} tokens @returns {Node[]} */
 function walk(tokens) {
   /** @type {Node[]} */
   const out = [];
@@ -42,7 +45,7 @@ function walk(tokens) {
   return out;
 }
 
-/** @param {any} tok @returns {Node | Node[] | null} */
+/** @param {Tok} tok @returns {Node | Node[] | null} */
 function node(tok) {
   switch (tok.type) {
     case "space":
@@ -50,7 +53,7 @@ function node(tok) {
     case "paragraph":
       return { t: "p", c: walk(tok.tokens) };
     case "heading":
-      return { t: "h" + Math.min(Math.max(tok.depth, 1) + 2, 6), c: walk(tok.tokens) };
+      return { t: "h" + Math.min(Math.max(Number(tok.depth), 1) + 2, 6), c: walk(tok.tokens) };
     case "text":
       return tok.tokens ? walk(tok.tokens) : decodeEntities(String(tok.text ?? ""));
     case "escape":
@@ -91,11 +94,11 @@ function node(tok) {
       return { t: "a", a: { href, target: "_blank", rel: "noopener noreferrer" }, c: [label] };
     }
     case "table": {
-      /** @param {any[]} cells @param {string} tag @returns {Node} */
+      /** @param {Cell[]} cells @param {string} tag @returns {Node} */
       const row = (cells, tag) => ({ t: "tr", c: cells.map((cell) => ({ t: tag, c: walk(cell.tokens) })) });
       /** @type {Node[]} */
       const parts = [{ t: "thead", c: [row(tok.header ?? [], "th")] }];
-      if (tok.rows?.length) parts.push({ t: "tbody", c: tok.rows.map((/** @type {any[]} */ r) => row(r, "td")) });
+      if (tok.rows?.length) parts.push({ t: "tbody", c: tok.rows.map((r) => row(r, "td")) });
       return {
         t: "div",
         a: { class: "table-scroll", tabindex: "0", role: "region", "aria-label": "Table, scrolls sideways" },
@@ -114,5 +117,5 @@ function node(tok) {
  * @returns {Node[]}
  */
 export function toTree(markdown) {
-  return walk(marked.lexer(String(markdown ?? "")));
+  return walk(/** @type {Tok[]} */ (/** @type {unknown} */ (marked.lexer(String(markdown ?? "")))));
 }

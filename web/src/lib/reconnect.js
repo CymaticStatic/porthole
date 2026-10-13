@@ -12,19 +12,19 @@ export function delayFor(attempt) {
 }
 
 /**
- * @param {{connect: () => void, setTimeout: Function, clearTimeout: Function}} deps
+ * @param {{connect: () => void, setTimeout: typeof globalThis.setTimeout, clearTimeout: typeof globalThis.clearTimeout}} deps
  * @returns {{start(): void, opened(): void, closed(): void, nudge(): void, stop(): void, state(): "connecting"|"up"|"waiting"}}
  */
 export function createReconnector({ connect, setTimeout, clearTimeout }) {
   let attempt = 0;
-  /** @type {any} */
-  let timer = null;
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let timer;
   /** @type {"connecting"|"up"|"waiting"} */
   let mode = "connecting";
   let stopped = true;
 
   function dial() {
-    timer = null;
+    timer = undefined;
     mode = "connecting";
     connect();
   }
@@ -33,7 +33,8 @@ export function createReconnector({ connect, setTimeout, clearTimeout }) {
     start() {
       stopped = false;
       attempt = 0;
-      if (timer !== null) { clearTimeout(timer); timer = null; }
+      clearTimeout(timer);
+      timer = undefined;
       dial();
     },
     opened() {
@@ -48,14 +49,16 @@ export function createReconnector({ connect, setTimeout, clearTimeout }) {
       attempt += 1;
       timer = setTimeout(() => { if (!stopped) dial(); }, ms);
     },
+    /** Dials again now, whatever the mode: a link that still looks up or connecting may be half-open. */
     nudge() {
-      if (stopped || mode !== "waiting") return;
+      if (stopped) return;
       clearTimeout(timer);
       dial();
     },
     stop() {
       stopped = true;
-      if (timer !== null) { clearTimeout(timer); timer = null; }
+      clearTimeout(timer);
+      timer = undefined;
     },
     state() {
       return mode;

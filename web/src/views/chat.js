@@ -5,11 +5,15 @@ import { h } from "../dom/h.js";
 import { mdom } from "../dom/mdom.js";
 import { createChat, toolSummary } from "../lib/chatmodel.js";
 import { ago } from "../lib/format.js";
+import { isObject, parseJson } from "../lib/json.js";
 import { toTree } from "../lib/markdown.js";
 import { openSocket } from "../net/socket.js";
 import { createComposer } from "./composer.js";
 import { createKeyRow } from "./keyrow.js";
 import { attachReadAloud } from "./talk.js";
+
+/** @typedef {import("../lib/chatmodel.js").ChatItem} ChatItem */
+/** @typedef {import("../lib/chatmodel.js").ChatPage} ChatPage */
 
 const PAGE = 50;
 const STICK_PX = 80; // closer to the bottom than this counts as "at the bottom"
@@ -35,17 +39,17 @@ function micMark() {
 
 /** A tiny event bus for read-aloud (it listens for newly arrived items). */
 function createBus() {
-  /** @type {Map<string, Set<(data: any) => void>>} */
+  /** @type {Map<string, Set<(items: ChatItem[]) => void>>} */
   const map = new Map();
   return {
-    /** @param {string} name @param {(data: any) => void} fn */
+    /** @param {string} name @param {(items: ChatItem[]) => void} fn */
     on(name, fn) {
       const set = map.get(name) ?? new Set();
       set.add(fn);
       map.set(name, set);
       return () => { set.delete(fn); };
     },
-    /** @param {string} name @param {any} data */
+    /** @param {string} name @param {ChatItem[]} data */
     emit(name, data) {
       for (const fn of [...(map.get(name) ?? [])]) fn(data);
     },
@@ -53,17 +57,18 @@ function createBus() {
 }
 
 /**
- * @param {HTMLElement} root @param {any} ctx
+ * @param {HTMLElement} root @param {import("../lib/types.js").Ctx} ctx
  * @returns {{unmount(): void}}
  */
 export function mount(root, ctx) {
   const { copy, route } = ctx;
   const sessionId = String(route.sessionId);
-  const machine = ctx.fleet.machine(route.machine);
-  if (!machine) {
+  const found = route.machine ? ctx.fleet.machine(route.machine) : undefined;
+  if (!found) {
     root.replaceChildren(h("p", { class: "chat-problem" }, copy.chatFailed));
     return { unmount() { root.replaceChildren(); } };
   }
+  const machine = found;
 
   const sessionPath = `/v1/sessions/${encodeURIComponent(sessionId)}`;
   const chat = createChat();
@@ -100,7 +105,7 @@ export function mount(root, ctx) {
   root.replaceChildren(view);
 
   // ---- items --------------------------------------------------------------------------------------------------------------------
-  /** @param {any} item @returns {HTMLElement} */
+  /** @param {ChatItem} item @returns {HTMLElement} */
   function buildItem(item) {
     const when = h("span", { class: "meta" }, ago(item.at, Date.now()));
     if (item.kind === "tools") {
@@ -113,7 +118,7 @@ export function mount(root, ctx) {
     }
     const mine = item.kind === "user";
     const head = h("p", { class: "bubble-head" }, h("span", { class: "bubble-who" }, mine ? copy.you : copy.agent), " ", when);
-    /** @type {Record<string, any>} */
+    /** @type {Record<string, string>} */
     const attrs = { class: `bubble ${mine ? "bubble-mine" : "bubble-agent"}`, "data-test": "bubble", "data-kind": item.kind, "data-id": item.id };
     if (item.via) attrs["data-via"] = item.via;
     const body = mine ? h("p", { class: "bubble-text" }, item.text) : h("div", { class: "bubble-md" }, mdom(toTree(item.text)));
@@ -178,7 +183,7 @@ export function mount(root, ctx) {
       setNote(r.status === 0 || !r.error ? copy.chatFailed : `${copy.chatFailed} ${copy.reasonLine(r.error)}`);
       return;
     }
-    const page = r.data;
+    const page = /** @type {ChatPage} */ (r.data);
     const before = scroller.scrollHeight - scroller.scrollTop;
     chat.older(page);
     start = page.start;
@@ -188,28 +193,28 @@ export function mount(root, ctx) {
     scroller.scrollTop = scroller.scrollHeight - before; // the message that was at the top stays where it was
   }
 
-  /** @param {string} raw */
-  function onMessage(raw) {
-    /** @type {any} */
-    let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
-    if (!msg || typeof msg !== "object") return;
-    if (msg.type === "backlog" && msg.page) {
+  /** @param {import("../net/socket.js").SocketData} data */
+  function onMessage(data) {
+    if (typeof data !== "string") return;
+    const msg = parseJson(data);
+    if (!isObject(msg)) return;
+    if (msg.type === "backlog" && isObject(msg.page)) {
+      const page = /** @type {ChatPage & {note?: unknown}} */ (msg.page);
       const first = !gotBacklog;
       stick = first || atBottom();
-      chat.backlog(msg.page);
+      chat.backlog(page);
       if (first) {
         gotBacklog = true;
-        start = msg.page.start;
-        hasOlder = Boolean(msg.page.hasOlder);
+        start = page.start;
+        hasOlder = Boolean(page.hasOlder);
       }
       setNote("");
       renderList();
-      if (typeof msg.page.note === "string" && msg.page.note !== "" && chat.items().length === 0) setNote(copy.reasonLine(msg.page.note));
+      if (typeof page.note === "string" && page.note !== "" && chat.items().length === 0) setNote(copy.reasonLine(page.note));
       if (first || stick) toBottom();
     } else if (msg.type === "append" && Array.isArray(msg.items)) {
       stick = atBottom();
-      const fresh = chat.append(msg.items, msg.end);
+      const fresh = chat.append(/** @type {ChatItem[]} */ (msg.items), typeof msg.end === "number" ? msg.end : undefined);
       renderList();
       afterLive(fresh.length);
       if (fresh.length > 0) bus.emit("items", fresh);
