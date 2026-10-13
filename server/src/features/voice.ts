@@ -5,6 +5,7 @@ import { MAX_AUDIO, Transcriber } from "../voice/transcribe";
 
 const SWEEP_EVERY_MS = 6 * 60 * 60 * 1000;
 const TOO_BIG = "the audio is larger than 25 MB";
+const BUSY = "too many recordings are waiting; try again in a moment";
 
 /** The whole body, or null as soon as it passes MAX_AUDIO (never buffers more than the cap plus one chunk). */
 async function readCapped(req: Request): Promise<Uint8Array | null> {
@@ -33,6 +34,8 @@ export const voiceFeature: FeatureFactory = (d) => {
         method: "POST",
         pattern: "/v1/voice",
         async handler(req) {
+          // Refuse before buffering the body when the queue is already full (each waiting body can be 25 MB).
+          if (transcriber.full) return json({ error: BUSY }, 429);
           const declared = Number(req.headers.get("content-length") ?? "0");
           if (declared > MAX_AUDIO) return json({ error: TOO_BIG }, 413);
           const body = await readCapped(req);
@@ -41,7 +44,7 @@ export const voiceFeature: FeatureFactory = (d) => {
             return json({ error: "send a 16 kHz mono WAV" }, 400);
           }
           const out = await transcriber.transcribe(body);
-          if (!out.ok) return json({ error: out.error, kept: out.kept }, 502);
+          if (!out.ok) return "busy" in out ? json({ error: out.error }, 429) : json({ error: out.error, kept: out.kept }, 502);
           return json({ text: out.text });
         },
       },

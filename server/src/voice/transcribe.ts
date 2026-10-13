@@ -11,17 +11,22 @@ import { run } from "../exec";
 
 export const MAX_AUDIO = 25 * 1024 * 1024;
 export const KEEP_AUDIO_DAYS = 30;
+export const MAX_QUEUED = 4; // recordings held at once (the running one included): each waiting body can be 25 MB
 const TRANSCRIBE_TIMEOUT_MS = 120_000;
 const ENHANCE_TIMEOUT_MS = 10_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AUDIO_NAME = /^\d{8}-\d{6}-[0-9a-f]{8}\.wav$/;
 // `voxtype transcribe` 1.1.0 prints its own progress and log lines on stdout, ahead of the text (seen on 2026-10-13).
-const VOXTYPE_NOISE = /^(Loading audio file: |Audio format: |Processing \d+ samples|\d{4}-\d\d-\d\dT[\d:.]+Z\s+(TRACE|DEBUG|INFO|WARN|ERROR)\b)/;
+// Beyond the lines seen so far, any line that starts like a log record (an ISO timestamp, then a level word) or with an
+// ANSI escape is dropped too, so a differently formatted warning is never typed into a prompt as dictation.
+const VOXTYPE_NOISE = /^(Loading audio file: |Audio format: |Processing \d+ samples|\u001b\[)/;
+const LOG_RECORD = /^\d{4}-\d\d-\d\d[T ]\d\d:\d\d:\d\d(?:[.,]\d+)?(?:Z|[+-]\d\d:?\d\d)?\s+\[?(?:TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL|CRITICAL)\]?(?![A-Za-z])/i;
 
-export type Outcome = { ok: true; text: string } | { ok: false; error: string; kept: string };
+export type Outcome = { ok: true; text: string } | { ok: false; error: string; kept: string } | { ok: false; error: string; busy: true };
 
 export class Transcriber {
   private chain: Promise<unknown> = Promise.resolve();
+  private pending = 0;
   private readonly inFlight = new Set<string>();
   private readonly dir: string;
 
@@ -29,11 +34,18 @@ export class Transcriber {
     this.dir = path.join(cfg.stateDir, "audio");
   }
 
-  /** Queued: only one voxtype run is ever active, however many requests arrive. */
+  /** True while MAX_QUEUED recordings are already held: a new one is refused (HTTP 429). */
+  get full(): boolean {
+    return this.pending >= MAX_QUEUED;
+  }
+
+  /** Queued: only one voxtype run is ever active, however many requests arrive; past MAX_QUEUED the answer is `busy`. */
   transcribe(wav: Uint8Array): Promise<Outcome> {
+    if (this.full) return Promise.resolve({ ok: false, error: "too many recordings are waiting; try again in a moment", busy: true });
+    this.pending += 1;
     const job = this.chain.then(() => this.runOne(wav));
     this.chain = job.catch(() => undefined);
-    return job;
+    return job.finally(() => { this.pending -= 1; });
   }
 
   private async runOne(wav: Uint8Array): Promise<Outcome> {
@@ -46,7 +58,7 @@ export class Transcriber {
     this.inFlight.add(name);
     try {
       const r = await run([this.cfg.bin.voxtype, "transcribe", file], { timeoutMs: TRANSCRIBE_TIMEOUT_MS });
-      let text = r.stdout.split("\n").filter((l) => !VOXTYPE_NOISE.test(l)).join("\n").trim();
+      let text = r.stdout.split("\n").filter((l) => !VOXTYPE_NOISE.test(l) && !LOG_RECORD.test(l)).join("\n").trim();
       if (r.code !== 0 || text === "") {
         return { ok: false, error: "transcription failed; the audio is kept as " + name, kept: name };
       }
@@ -56,7 +68,8 @@ export class Transcriber {
         const cleaned = e.stdout.trim();
         if (e.code === 0 && cleaned !== "") text = cleaned;
       }
-      unlinkSync(file);
+      // The text is already in hand: a failed delete (the file is swept after 30 days) must not lose it.
+      try { unlinkSync(file); } catch { /* left for the sweep */ }
       return { ok: true, text };
     } finally {
       this.inFlight.delete(name);

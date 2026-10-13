@@ -9,7 +9,7 @@ import { ensureLocalToken } from "./auth/localtoken";
 import type { HostdConfig } from "./config";
 import { SentLog } from "./deliver/sentlog";
 import { EventsHub } from "./events/hub";
-import { registerPid, unregisterPid } from "./pids";
+import { pidsDir, registerPid, unregisterPid } from "./pids";
 import { json, match, type Channel, type Ctx, type Feature, type FeatureFactory, type WsData } from "./router";
 import { Registry } from "./sessions/registry";
 
@@ -146,7 +146,7 @@ export async function createHostd(config: HostdConfig, factories: FeatureFactory
       await server.stop(true);
       if (registered) {
         registered = false;
-        unregisterPid();
+        unregisterPid(pidsDir(config.runtimeDir));
       }
     },
   };
@@ -156,7 +156,7 @@ export async function createHostd(config: HostdConfig, factories: FeatureFactory
     await hostd.stop();
     throw e;
   }
-  registerPid();
+  registerPid(pidsDir(config.runtimeDir));
   registered = true;
   return hostd;
 }

@@ -8,7 +8,7 @@ const server: Bun.Server<WsData> = Bun.serve<WsData>({
     if (u.pathname === "/ws" && srv.upgrade(req, { data: { search: u.search, cookie: req.headers.get("cookie") ?? "none", origin: req.headers.get("origin") ?? "none" } })) return undefined;
     // absolute Location built from this server's own address, the way a framework does from the Host it sees
     if (u.pathname === "/redir") return new Response(null, { status: 302, headers: { Location: "http://127.0.0.1:" + server.port + "/target" } });
-    return new Response("upstream " + u.pathname + u.search + " enc=" + (req.headers.get("accept-encoding") ?? "none") + " host=" + (req.headers.get("host") ?? "none") + " xff=" + (req.headers.get("x-forwarded-for") ?? "none"));
+    return new Response("upstream " + u.pathname + u.search + " enc=" + (req.headers.get("accept-encoding") ?? "none") + " host=" + (req.headers.get("host") ?? "none") + " xff=" + (req.headers.get("x-forwarded-for") ?? "none") + " origin=" + (req.headers.get("origin") ?? "none") + " referer=" + (req.headers.get("referer") ?? "none"));
   },
   websocket: { message(ws, m) { ws.send("echo " + String(m) + " q=" + ws.data.search + " cookie=" + ws.data.cookie + " origin=" + ws.data.origin); } },
 });

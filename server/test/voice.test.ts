@@ -100,3 +100,62 @@ test("voxtype's own progress and log lines on stdout are not part of the text", 
     s3.cleanup();
   }
 });
+
+test("any log-record line (ISO timestamp + level) and any ANSI-prefixed line is dropped, ordinary text is kept", async () => {
+  const s4 = new Scratch();
+  const lines = [
+    "2026-10-13 15:46:27,495 WARNING whisper: low confidence",
+    "2026-10-13T15:46:27.5+02:00 [ERROR] model fell back to cpu",
+    "2026-10-13T15:46:27Z debug: cache miss",
+    "\u001b[33mWARN\u001b[0m something with colour",
+    "\u001b[2m2026-10-13T15:46:27Z\u001b[0m INFO x",
+    "2026-10-13 is the day I mean to meet",   // a date in speech, no level word: kept
+    "Informing the team, then the info line",   // starts with a level-like word but no timestamp: kept
+  ];
+  s4.writeFake("voxtype", "#!/bin/sh\ncat <<'EOT'\n" + lines.join("\n") + "\nEOT\n");
+  try {
+    const out = await new Transcriber(s4.config()).transcribe(wav());
+    expect(out).toEqual({ ok: true, text: "2026-10-13 is the day I mean to meet\nInforming the team, then the info line" });
+  } finally {
+    s4.cleanup();
+  }
+});
+
+test("the queue holds at most 4 recordings; the fifth is refused as busy and 429 over HTTP", async () => {
+  const s5 = new Scratch();
+  s5.writeFake("voxtype", "#!/bin/sh\nsleep 0.4\necho text\n");
+  try {
+    const t = new Transcriber(s5.config());
+    const jobs = [1, 2, 3, 4, 5, 6].map(() => t.transcribe(wav()));
+    const results = await Promise.all(jobs);
+    expect(results.map((r) => r.ok)).toEqual([true, true, true, true, false, false]);
+    expect(results[4]).toMatchObject({ ok: false, busy: true });
+    expect(t.full).toBe(false); // the slots are free again once the jobs finish
+    expect((await t.transcribe(wav())).ok).toBe(true);
+  } finally {
+    s5.cleanup();
+  }
+
+  const s6 = new Scratch();
+  s6.writeFake("voxtype", "#!/bin/sh\nsleep 0.6\necho text\n");
+  const slow = await startTestHostd(s6, [voiceFeature]);
+  try {
+    const post = () => fetch(slow.url + "/v1/voice", { method: "POST", headers: { ...localHeaders(slow), Origin: slow.config.origin, "Content-Type": "audio/wav" }, body: wav() });
+    const statuses = (await Promise.all([1, 2, 3, 4, 5, 6].map(post))).map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 200, 200, 200, 429, 429]);
+  } finally {
+    await slow.stop();
+    s6.cleanup();
+  }
+});
+
+test("a failure to delete the audio after a good transcription still returns the text", async () => {
+  const s7 = new Scratch();
+  // the fake voxtype removes its own input, so the Transcriber's unlink throws ENOENT
+  s7.writeFake("voxtype", "#!/bin/sh\nrm -f \"$2\"\necho 'still here'\n");
+  try {
+    expect(await new Transcriber(s7.config()).transcribe(wav())).toEqual({ ok: true, text: "still here" });
+  } finally {
+    s7.cleanup();
+  }
+});

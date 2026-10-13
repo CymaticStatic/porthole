@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { parseOmpUsage, usageFeature } from "../src/features/usage";
+import { FAILURE_BACKOFF_MS, parseOmpUsage, parseOmpUsageAt, usageFeature } from "../src/features/usage";
 import { get, startTestHostd } from "./helpers/client";
 import type { TestHostd } from "./helpers/client";
 import { Scratch } from "./helpers/scratch";
@@ -44,6 +44,51 @@ test("unexpected shapes give no windows, never a throw", () => {
   expect(parseOmpUsage(null)).toEqual([]);
   expect(parseOmpUsage({ reports: "x" })).toEqual([]);
   expect(parseOmpUsage({ reports: [{ limits: [{ id: "anthropic:5h", amount: { usedFraction: "0.5" } }] }] })).toEqual([]);
+});
+
+test("readAt is the oldest fetchedAt of the reports the windows came from, not hostd's clock", () => {
+  const limit = (id: string, usedFraction: number) => ({ id, amount: { usedFraction }, window: { resetsAt: 1000 }, status: "ok" });
+  const out = parseOmpUsageAt({
+    reports: [
+      { fetchedAt: 5000, limits: [limit("anthropic:5h", 0.5)] },
+      { fetchedAt: 3000, limits: [limit("anthropic:7d", 0.4), limit("anthropic:5h", 0.1)] }, // its 5h is lower: that report's 5h is not used
+      { fetchedAt: 1000, limits: [limit("openai:5h", 0.9)] },                                  // no Claude window: ignored
+    ],
+  });
+  expect([out.windows.map((w) => w.id), out.fetchedAt]).toEqual([["5h", "7d"], 3000]);
+  expect(parseOmpUsageAt({ reports: [{ limits: [limit("anthropic:5h", 0.5)] }] }).fetchedAt).toBeNull();
+});
+
+test("P2.7: /v1/usage readAt is the fixture's fetchedAt", async () => {
+  const r = (await (await get(h, "/v1/usage")).json()) as { readAt: string };
+  expect(r.readAt).toBe(new Date(1791905648983).toISOString());
+});
+
+test("no windows is a 502 'no Claude usage reported', never cached; after a failure omp is left alone for 30 s", async () => {
+  const out = path.join(s.root, "omp-switch-out");
+  const swCalls = path.join(s.root, "omp-switch-calls");
+  writeFileSync(out, JSON.stringify({ reports: [{ fetchedAt: 1, limits: [] }] }));
+  const bin = s.writeFake("omp-switch", "#!/bin/sh\necho x >> '" + swCalls + "'\ncat '" + out + "'\n");
+  const sw = await startTestHostd(s, [usageFeature], { bin: { omp: bin } });
+  const calls = () => readFileSync(swCalls, "utf8").trim().split("\n").length;
+  const realNow = Date.now;
+  try {
+    const first = await get(sw, "/v1/usage");
+    expect([first.status, await first.json()]).toEqual([502, { error: "no Claude usage reported" }]);
+    // within the back-off, a plain request and a ?refresh=1 request both get the same answer without running omp again
+    const second = await get(sw, "/v1/usage");
+    const third = await get(sw, "/v1/usage?refresh=1");
+    expect([second.status, third.status, calls()]).toEqual([502, 502, 1]);
+    // after the back-off omp is asked again; the empty answer was not kept as data
+    copyFileSync(fixture, out);
+    Date.now = () => realNow() + FAILURE_BACKOFF_MS + 1000;
+    const later = await get(sw, "/v1/usage");
+    const body = (await later.json()) as { windows: unknown[] };
+    expect([later.status, body.windows.length, calls()]).toEqual([200, 2, 2]);
+  } finally {
+    Date.now = realNow;
+    await sw.stop();
+  }
 });
 
 test("P2.7: /v1/usage returns the numbers, cached for a minute, with the exact flags", async () => {
