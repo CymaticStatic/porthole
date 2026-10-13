@@ -325,6 +325,9 @@ drawer on the phone. Its groups, top to bottom:
   because drafts live on the device (4.5).
 - A thin status strip shows "Reconnecting…" while the link is down. Sending is held, not dropped,
   and goes out when the link is back.
+- The phone app has a **"Stay connected in the background"** switch (Machines screen, on by default). While it is
+  off the service is stopped and stays stopped: opening the app, a phone restart or an app update do not start it,
+  so there are no background alerts until Ben turns it back on.
 
 ### 4.14 Galaxy Watch6 app and complications (Moshi: Apple Watch app)
 - A Wear OS app (Kotlin, Compose for Wear OS Material 3). Screens:

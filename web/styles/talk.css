@@ -132,7 +132,8 @@
 .talk-error[hidden],
 .talk-heard[hidden],
 .talk-error-reason[hidden],
-.talk-stop-reading[hidden] {
+.talk-stop-reading[hidden],
+.talk-read-failed[hidden] {
   display: none;
 }
 
@@ -298,6 +299,26 @@
   font-size: var(--fs-3);
   box-shadow: var(--shadow);
   cursor: pointer;
+}
+
+.talk-read-failed {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
+  z-index: 70;
+  inline-size: max-content;
+  max-inline-size: calc(100% - var(--sp-5));
+  box-sizing: border-box;
+  margin-block: 0;
+  margin-inline: auto;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-2);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-3);
+  line-height: var(--lh-body);
+  box-shadow: var(--shadow);
 }
 
 @media (prefers-reduced-motion: reduce) {

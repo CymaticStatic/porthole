@@ -10,7 +10,7 @@ import android.util.Log
 /**
  * [TtsEngine] on the system `TextToSpeech`: `QUEUE_ADD`, music stream. Create it on the main thread: the engine binds
  * asynchronously and utterances given before it is ready are held and spoken in order once it is. If the engine cannot
- * start, every utterance ends at once (`done = true`, logged) so a caller waiting on it never hangs. Call [shutdown]
+ * start, every utterance ends at once (`done = true`, logged, after an error) so a caller waiting on it never hangs. Call [shutdown]
  * when the owner goes away.
  */
 class AndroidTts(context: Context) : TtsEngine {
@@ -21,6 +21,9 @@ class AndroidTts(context: Context) : TtsEngine {
 
     @Volatile
     override var listener: ((id: String, done: Boolean) -> Unit)? = null
+
+    @Volatile
+    override var errorListener: ((id: String) -> Unit)? = null
 
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status -> onInit(status) }
 
@@ -37,12 +40,12 @@ class AndroidTts(context: Context) : TtsEngine {
             @Deprecated("Replaced by onError(String, Int)")
             override fun onError(utteranceId: String) {
                 Log.w(TAG, "TextToSpeech failed on $utteranceId")
-                listener?.invoke(utteranceId, true)
+                reportFailure(utteranceId)
             }
 
             override fun onError(utteranceId: String, errorCode: Int) {
                 Log.w(TAG, "TextToSpeech failed on $utteranceId (error $errorCode)")
-                listener?.invoke(utteranceId, true)
+                reportFailure(utteranceId)
             }
 
             override fun onStop(utteranceId: String, interrupted: Boolean) {
@@ -98,7 +101,13 @@ class AndroidTts(context: Context) : TtsEngine {
         }
     }
 
+    /** [id] was never spoken (the engine could not start or refused it): an error, then the end. */
     private fun endUnspoken(id: String) {
+        reportFailure(id)
+    }
+
+    private fun reportFailure(id: String) {
+        errorListener?.invoke(id)
         listener?.invoke(id, true)
     }
 

@@ -211,6 +211,34 @@ class EventsServiceTest {
     }
 
     @Test
+    fun whileStayConnectedIsOffStartDoesNothingAndTurningItOnStartsTheService() {
+        BackgroundPref(context).enabled = false
+        EventsService.start(context)
+        assertNull("an app launch must not start it", shadowOf(context).nextStartedService)
+
+        EventsService.setStayConnected(context, true)
+        assertTrue(BackgroundPref(context).enabled)
+        assertEquals(EventsService::class.java.name, shadowOf(context).nextStartedService.component!!.className)
+    }
+
+    @Test
+    fun turningStayConnectedOffStopsTheServiceKeepsTheChoiceAndStartStaysQuiet() {
+        EventsService.setStayConnected(context, false)
+        assertEquals(EventsService::class.java.name, shadowOf(context).nextStoppedService.component!!.className)
+        assertNull(shadowOf(context).nextStartedService)
+
+        assertTrue("the choice outlives the app: a new reader sees it off", !BackgroundPref(context).enabled)
+        EventsService.start(context)
+        BootPolicy.startFromBoot(context)
+        assertNull(shadowOf(context).nextStartedService)
+    }
+
+    @Test
+    fun stayConnectedIsOnByDefault() {
+        assertTrue(BackgroundPref(context).enabled)
+    }
+
+    @Test
     fun aNewDefaultNetworkMakesTheWatcherCallItsAction() {
         var nudges = 0
         val watcher = NetworkWatcher(context) { nudges++ }

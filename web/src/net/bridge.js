@@ -4,7 +4,7 @@
 import { isObject } from "../lib/json.js";
 
 /** The only method names the page will send; anything else is refused before it leaves the page. */
-const ALLOWED = new Set(["machines", "speak", "stopSpeaking", "startRecording", "stopRecording", "pickFile", "openExternal"]);
+const ALLOWED = new Set(["machines", "speak", "stopSpeaking", "startRecording", "stopRecording", "pickFile", "openExternal", "openSettings"]);
 
 /** A share can arrive before any screen listens for it (the app opened on the Inbox); this many are kept, the newest. */
 const SHARE_QUEUE_MAX = 10;

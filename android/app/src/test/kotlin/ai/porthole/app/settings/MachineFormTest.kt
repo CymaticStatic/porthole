@@ -1,12 +1,18 @@
 package ai.porthole.app.settings
 
 import ai.porthole.app.MachineStore
+import ai.porthole.app.events.BackgroundPref
+import ai.porthole.app.events.EventsService
 import ai.porthole.app.net.HostClient
 import ai.porthole.app.net.Http
 import ai.porthole.shared.Machine
 import ai.porthole.shared.MachineList
+import ai.porthole.shared.MachineInfo
+import ai.porthole.shared.You
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -25,13 +31,17 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 private const val BAD_ORIGIN = "Use the https address ending in .ts.net"
@@ -173,9 +183,11 @@ class MachineFormTest {
         showScreen(store, hostAnswering(null))
         rule.onNodeWithText("Your computers").assertIsDisplayed()
         for (m in MachineList.defaults) {
+            rule.onNodeWithTag(TAG_LIST).performScrollToNode(hasTestTag("remove-${m.name}"))
             rule.onNodeWithText(m.name).assertIsDisplayed()
             rule.onNodeWithText(m.origin).assertIsDisplayed()
         }
+        rule.onNodeWithTag(TAG_LIST).performScrollToNode(hasTestTag("remove-${desk.name}"))
 
         rule.onNodeWithTag("remove-${desk.name}").performClick()
         assertEquals("nothing removed before the user confirms", MachineList.defaults, store.machines.value)
@@ -230,5 +242,49 @@ class MachineFormTest {
         showScreen(store, hostAnswering(null))
         rule.onNodeWithTag("test-${desk.name}").performClick()
         rule.waitUntil(5_000) { rule.count("Could not connect: no route to host") == 1 }
+    }
+
+    @Test
+    fun testConnectionOverwritesTheKeptDeviceNameSoARenamedDeviceShowsItsNewName() {
+        val store = store
+        runBlocking { store.device(desk) { Result.success(MachineInfo("Desk Omarchy", You("old-name"))) } }
+        showScreen(store, hostAnswering("""{"name":"Desk Omarchy","you":{"device":"new-name"}}"""))
+        rule.onNodeWithTag("test-${desk.name}").performClick()
+        rule.waitUntil(5_000) { rule.count("Connected to Desk Omarchy. This phone shows up there as new-name.") == 1 }
+        assertEquals("new-name", runBlocking { store.device(desk) { error("must not fetch") } })
+    }
+
+    // --- Stay connected in the background -------------------------------------------------------------------------
+
+    private val app get() = RuntimeEnvironment.getApplication()
+
+    @Test
+    fun theBackgroundSwitchIsOnByDefaultWithAnExplanationUnderIt() {
+        showScreen(store, hostAnswering(null))
+        rule.onNodeWithText("Stay connected in the background").assertIsDisplayed()
+        rule.onNodeWithTag(TAG_STAY_CONNECTED).assertIsOn()
+        rule.onNodeWithText("When this is on, Porthole keeps a quiet connection", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun turningTheBackgroundSwitchOffSavesItAndStopsTheServiceAndOnStartsItAgain() {
+        showScreen(store, hostAnswering(null))
+        rule.onNodeWithTag(TAG_STAY_CONNECTED).performClick()
+        rule.onNodeWithTag(TAG_STAY_CONNECTED).assertIsOff()
+        assertFalse(BackgroundPref(app).enabled)
+        assertEquals(EventsService::class.java.name, shadowOf(app).nextStoppedService.component!!.className)
+        assertNull("nothing started it", shadowOf(app).nextStartedService)
+
+        rule.onNodeWithTag(TAG_STAY_CONNECTED).performClick()
+        rule.onNodeWithTag(TAG_STAY_CONNECTED).assertIsOn()
+        assertTrue(BackgroundPref(app).enabled)
+        assertEquals(EventsService::class.java.name, shadowOf(app).nextStartedService.component!!.className)
+    }
+
+    @Test
+    fun theSwitchShowsTheSavedChoiceWhenTheScreenOpens() {
+        BackgroundPref(app).enabled = false
+        showScreen(store, hostAnswering(null))
+        rule.onNodeWithTag(TAG_STAY_CONNECTED).assertIsOff()
     }
 }

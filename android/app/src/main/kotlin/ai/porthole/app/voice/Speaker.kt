@@ -8,14 +8,17 @@ import kotlinx.coroutines.CompletableDeferred
  *
  * Every utterance is handed to the engine at once (it queues them) and [speak] finishes when the last one has ended.
  * An utterance longer than [maxChars] (the engine's maximum input length) is split first. One reading at a time: a
- * new [speak] stops the one in progress, which then returns `false`.
+ * new [speak] stops the one in progress, which then returns `false`. When the engine reports that an utterance of the
+ * reading failed and the reading then ends by itself, [speak] throws [SpeechFailedException].
  */
 class Speaker(
     private val engine: TtsEngine,
     private val focus: AudioFocus,
     private val maxChars: Int = DEFAULT_MAX_CHARS,
 ) {
-    private class Reading(val lastId: String, val result: CompletableDeferred<Boolean> = CompletableDeferred())
+    private class Reading(val ids: Set<String>, val lastId: String, val result: CompletableDeferred<Boolean> = CompletableDeferred()) {
+        @Volatile var failed = false
+    }
 
     private val lock = Any()
     private var reading: Reading? = null
@@ -24,15 +27,19 @@ class Speaker(
     init {
         require(maxChars >= 1) { "maxChars must be positive" }
         engine.listener = { id, done -> if (done) onEnded(id) }
+        engine.errorListener = { id -> onFailed(id) }
     }
 
-    /** `true` once the last utterance has ended, `false` when [stop] (or another [speak]) cut it short. */
+    /**
+     * `true` once the last utterance has ended, `false` when [stop] (or another [speak]) cut it short.
+     * @throws SpeechFailedException when an utterance could not be spoken
+     */
     suspend fun speak(utterances: List<String>): Boolean {
         val pieces = utterances.filter { it.isNotBlank() }.flatMap { split(it, maxChars) }
         if (pieces.isEmpty()) return true
 
         val ids = pieces.map { "u${counter.incrementAndGet()}" }
-        val mine = Reading(lastId = ids.last())
+        val mine = Reading(ids = ids.toSet(), lastId = ids.last())
         val previous = synchronized(lock) { reading.also { reading = mine } }
         if (previous != null) {
             engine.stop()
@@ -42,7 +49,9 @@ class Speaker(
         focus.request()
         try {
             pieces.forEachIndexed { i, text -> engine.speak(text, ids[i]) }
-            return mine.result.await()
+            val finished = mine.result.await()
+            if (finished && mine.failed) throw SpeechFailedException()
+            return finished
         } finally {
             // Still the active reading: it ended by itself, by cancellation or by a failure, so release the focus and
             // make sure nothing of ours stays queued. Otherwise stop() or a newer speak() already took over.
@@ -66,6 +75,11 @@ class Speaker(
     private fun onEnded(id: String) {
         val current = synchronized(lock) { reading }
         if (current != null && current.lastId == id) current.result.complete(true)
+    }
+
+    private fun onFailed(id: String) {
+        val current = synchronized(lock) { reading }
+        if (current != null && id in current.ids) current.failed = true
     }
 
     /** Clears [r] as the active reading if it still is. */
@@ -97,3 +111,6 @@ class Speaker(
         }
     }
 }
+
+/** The engine could not speak part of a reading. The bridge turns it into an error reply (the page words it itself). */
+class SpeechFailedException : Exception("Text-to-speech failed")

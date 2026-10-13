@@ -115,4 +115,35 @@ class MachineStoreTest {
         store.add(desk.name, desk.origin)
         assertEquals("phone-2", store.device(desk) { Result.success(MachineInfo(it.name, You("phone-2"))) })
     }
+
+    @Test
+    fun testConnectionAlwaysAsksAndOverwritesTheKeptDeviceName() = runTest {
+        val store = MachineStore(context)
+        assertEquals("old-name", store.device(desk) { Result.success(MachineInfo(it.name, You("old-name"))) })
+        var fetches = 0
+        val renamed: suspend (Machine) -> Result<MachineInfo> = {
+            fetches++
+            Result.success(MachineInfo(it.name, You("new-name")))
+        }
+        assertEquals("new-name", store.testConnection(desk, renamed).getOrThrow().you?.device)
+        assertEquals(1, fetches)
+        // device() now answers from the overwritten cache, without asking again, even from a new store instance.
+        assertEquals("new-name", MachineStore(context).device(desk) { error("must not fetch") })
+    }
+
+    @Test
+    fun testConnectionThatFailsOrReportsNoDeviceKeepsTheOldName() = runTest {
+        val store = MachineStore(context)
+        store.device(desk) { Result.success(MachineInfo(it.name, You("kept"))) }
+        assertTrue(store.testConnection(desk) { Result.failure(IOException("down")) }.isFailure)
+        assertEquals("answered with no device", true, store.testConnection(desk) { Result.success(MachineInfo(it.name, null)) }.isSuccess)
+        assertEquals("kept", store.device(desk) { error("must not fetch") })
+    }
+
+    @Test
+    fun testConnectionOnAFreshStoreRemembersTheDeviceForNextTime() = runTest {
+        val store = MachineStore(context)
+        store.testConnection(desk) { Result.success(MachineInfo(it.name, You("first"))) }
+        assertEquals("first", store.device(desk) { error("must not fetch") })
+    }
 }

@@ -34,6 +34,13 @@ class BootReceiverTest {
     }
 
     @Test
+    fun whileStayConnectedIsOffNeitherBootNorAnUpdateStartsTheService() {
+        BackgroundPref(app).enabled = false
+        assertNull(started(Intent.ACTION_BOOT_COMPLETED))
+        assertNull(started(Intent.ACTION_MY_PACKAGE_REPLACED))
+    }
+
+    @Test
     fun anyOtherActionStartsNothing() {
         assertNull(started(Intent.ACTION_USER_PRESENT))
         assertNull(started("com.example.BOOT_COMPLETED"))

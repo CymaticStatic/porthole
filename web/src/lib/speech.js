@@ -105,3 +105,13 @@ export function readAllUtterances(markdown) {
   walk(/** @type {Tok[]} */ (marked.lexer(String(markdown ?? ""))));
   return out;
 }
+
+/**
+ * Has the app read a batch aloud. Resolves `true` when the batch was spoken or was cut off by a stop, `false` when the
+ * app answered with an error (its text-to-speech could not speak it) or could not be reached.
+ * @param {{call(method: string, args?: object): Promise<unknown>}} bridge @param {string[]} utterances
+ * @returns {Promise<boolean>}
+ */
+export function speakThroughBridge(bridge, utterances) {
+  return bridge.call("speak", { utterances }).then(() => true, () => false);
+}

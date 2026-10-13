@@ -11,6 +11,7 @@ import org.junit.Test
 
 private class FakeEngine : TtsEngine {
     override var listener: ((id: String, done: Boolean) -> Unit)? = null
+    override var errorListener: ((id: String) -> Unit)? = null
     val spoken = mutableListOf<Pair<String, String>>() // text, id
     var stops = 0
     val log = mutableListOf<String>()
@@ -28,6 +29,10 @@ private class FakeEngine : TtsEngine {
     fun texts() = spoken.map { it.first }
     fun started(i: Int) = listener!!.invoke(spoken[i].second, false)
     fun ended(i: Int) = listener!!.invoke(spoken[i].second, true)
+    fun failed(i: Int) {
+        errorListener!!.invoke(spoken[i].second)
+        listener!!.invoke(spoken[i].second, true)
+    }
 }
 
 private class FakeFocus(private val log: MutableList<String>) : AudioFocus {
@@ -155,6 +160,32 @@ class SpeakerTest {
         engine.ended(0)
         engine.ended(1)
         assertTrue(result.await())
+    }
+
+    @Test fun aFailedUtteranceMakesTheReadingThrowOnceItEnds() = runTest {
+        val result = async { runCatching { speaker.speak(listOf("one", "two")) } }
+        runCurrent()
+        engine.failed(0)
+        engine.ended(1)
+        val outcome = result.await()
+        assertTrue(outcome.exceptionOrNull() is SpeechFailedException)
+        assertEquals("focus is given back", 1, focus.abandons)
+    }
+
+    @Test fun aFailureForAnotherReadingsIdIsIgnored() = runTest {
+        val result = async { speaker.speak(listOf("one")) }
+        runCurrent()
+        engine.errorListener!!.invoke("someone-else")
+        engine.ended(0)
+        assertTrue(result.await())
+    }
+
+    @Test fun aFailureThenStopStillReturnsFalse() = runTest {
+        val result = async { runCatching { speaker.speak(listOf("one", "two")) } }
+        runCurrent()
+        engine.failed(0)
+        speaker.stop()
+        assertEquals(false, result.await().getOrNull())
     }
 
     @Test fun eventsForOtherIdsAreIgnored() = runTest {

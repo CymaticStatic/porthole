@@ -318,6 +318,11 @@ export const copy = deepFreeze({
   machineNameInvalid: "Use letters, numbers and dashes only.",
   notifications: "Notifications",
   notificationSettings: "Open notification settings",
+  phoneSettings: "Phone settings",
+  phoneMachines: "Computers this phone connects to",
+  phoneKeepRunning: "Keep Porthole running",
+  phoneSettingsFailed: "Couldn't open that screen. Try again.",
+  readAloudFailed: "Couldn't read this aloud.",
   voiceKept: "Voice recordings kept",
 
   // ---- Config (per machine) and checks ----

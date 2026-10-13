@@ -13,7 +13,8 @@ import kotlinx.coroutines.launch
 
 /**
  * The always-on foreground service (type `remoteMessaging`, design decision 1): it keeps [ConnectionHub]'s sockets
- * open and shows the `connection` notification. It stops itself only when the settings screen calls [stop].
+ * open and shows the `connection` notification. It ends only when the user turns "Stay connected in the background"
+ * off ([setStayConnected]); while that is off [start] does nothing.
  */
 class EventsService : LifecycleService() {
     private val hub: ConnectionHub get() = ConnectionHub.shared()
@@ -54,14 +55,24 @@ class EventsService : LifecycleService() {
         Notifier.connectionText(this, online.values.count { it == Online.CONNECTED }, configured)
 
     companion object {
-        /** Starts the service from the foreground app or from a boot broadcast. */
+        /**
+         * Starts the service from the foreground app or from a boot broadcast, unless the user switched "Stay
+         * connected in the background" off: then nothing starts it.
+         */
         fun start(context: Context) {
+            if (!BackgroundPref(context).enabled) return
             context.startForegroundService(Intent(context, EventsService::class.java))
         }
 
-        /** The settings screen's "stop" button: the one way the service ends. */
+        /** Ends the service. */
         fun stop(context: Context) {
             context.stopService(Intent(context, EventsService::class.java))
+        }
+
+        /** The settings switch: saves the choice, then starts the service (on) or stops it and keeps it stopped (off). */
+        fun setStayConnected(context: Context, on: Boolean) {
+            BackgroundPref(context).enabled = on
+            if (on) start(context) else stop(context)
         }
     }
 }

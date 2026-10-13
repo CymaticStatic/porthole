@@ -250,3 +250,18 @@ Configuration cache entry stored.
 ```
 
 This proves lint now runs offline. Test totals from the JUnit XML after this run: shared 14 classes, 116 tests; app 29 classes, 317 tests; wear 6 classes, 63 tests; 496 tests, 0 failures, 0 errors, 0 skipped (identical to section 2). APKs: see section 3 (rebuilt after the `androidx.fragment` change; the wear APK is byte-identical to the earlier build).
+
+## 9. Phone tweaks (2026-10-13): `openSettings`, background switch, read-aloud failure, fresh device name
+
+Changes: bridge method `openSettings({screen:"machines"|"battery"})` (shared `BridgeProtocol`, `BridgeMethods`, page `ALLOWED`, a 'Phone settings' group on the Settings page, shown only when the native bridge exists); a 'Stay connected in the background' switch on the Machines screen (`BackgroundPref`; off stops `EventsService` and `EventsService.start` refuses to start it, which covers the app opening and `BootReceiver`; `NetworkWatcher` only lives inside the service, so it is gone with it); a failed text-to-speech utterance now gives a bridge error reply and the page shows "Couldn't read this aloud."; 'Test connection' always fetches `/v1/machine` and overwrites the kept device name (`MachineStore.testConnection`).
+
+Command (same as section 8): `BUILD SUCCESSFUL in 1m 14s` (second run; the first run found two stale tests, `BridgeHostTest` used `openSettings` as its example of an unknown method and `MachineFormTest` needed to scroll to the second computer now that the switch sits above the list, both fixed).
+
+Test totals from the JUnit XML: shared 14 classes, 118 tests; app 29 classes, 336 tests; wear 6 classes, 63 tests; 517 tests, 0 failures, 0 errors, 0 skipped. Lint: `:app:lintDebug` and `:wear:lintDebug` pass (0 errors). Web: `bun run typecheck:web` clean; `bun run test:web` 163 pass, 0 fail; e2e `settings.test.ts` 3 pass, `talk.test.ts` 1 pass.
+
+New APKs (nothing installed from here):
+
+```
+72dfa104e098601bebbe70b1562a29f8f8f2520e5125de27286438877e64d03c  android/app/build/outputs/apk/debug/app-debug.apk  (34820362 bytes)
+2f064286f57b9ae37fb07ddfe32f38af8a5469d806ab96d2dcf2ccd532c304b8  android/wear/build/outputs/apk/debug/wear-debug.apk  (38186476 bytes)
+```

@@ -53,6 +53,7 @@ private class MainRegistry : WebMessageRegistry {
 
 private class MainEngine : TtsEngine {
     override var listener: ((id: String, done: Boolean) -> Unit)? = null
+    override var errorListener: ((id: String) -> Unit)? = null
     override fun speak(text: String, id: String) = Unit
     override fun stop() = Unit
 }

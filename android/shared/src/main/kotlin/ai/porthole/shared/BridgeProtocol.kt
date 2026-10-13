@@ -19,7 +19,7 @@ import java.net.URISyntaxException
 object BridgeProtocol {
     /** Exactly the methods the page's `ALLOWED` set can send. */
     val METHODS: Set<String> = setOf(
-        "machines", "speak", "stopSpeaking", "startRecording", "stopRecording", "pickFile", "openExternal",
+        "machines", "speak", "stopSpeaking", "startRecording", "stopRecording", "pickFile", "openExternal", "openSettings",
     )
 
     const val MAX_MESSAGE_CHARS = 262_144
@@ -30,6 +30,7 @@ object BridgeProtocol {
     const val NOTIFICATION_SETTINGS_URL = "porthole://notification-settings"
 
     private val PICK_SOURCES = setOf("camera", "photo", "file")
+    private val SETTINGS_SCREENS = mapOf("machines" to SettingsScreen.MACHINES, "battery" to SettingsScreen.BATTERY)
 
     sealed interface Parsed {
         data class Call(val id: JsonElement, val method: String, val args: JsonObject) : Parsed
@@ -40,6 +41,9 @@ object BridgeProtocol {
         data class Https(val url: String) : ExternalTarget
         data object NotificationSettings : ExternalTarget
     }
+
+    /** The two native settings screens the page can open with `openSettings`. */
+    enum class SettingsScreen { MACHINES, BATTERY }
 
     fun parse(text: String): Parsed {
         if (text.length > MAX_MESSAGE_CHARS) return Parsed.Bad(null, "Message too large")
@@ -106,6 +110,13 @@ object BridgeProtocol {
         val s = if (p != null && p.isString) p.content else null
         return if (s != null && s in PICK_SOURCES) Result.success(s)
         else Result.failure(IllegalArgumentException("source must be camera, photo or file"))
+    }
+
+    fun settingsArgs(args: JsonObject): Result<SettingsScreen> {
+        val p = args["screen"] as? JsonPrimitive
+        val s = if (p != null && p.isString) p.content else null
+        return SETTINGS_SCREENS[s]?.let { Result.success(it) }
+            ?: Result.failure(IllegalArgumentException("screen must be machines or battery"))
     }
 
     fun externalArgs(args: JsonObject): Result<ExternalTarget> {

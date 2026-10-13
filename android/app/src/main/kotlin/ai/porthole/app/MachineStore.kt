@@ -38,8 +38,8 @@ class MachineStore(context: Context) {
 
     /**
      * The `device` this phone uses on [machine]'s events socket: `you.device` from `GET /v1/machine`, fetched with
-     * [fetch] once and then kept. When the machine cannot be reached or reports no device, [FALLBACK_DEVICE] is
-     * returned and nothing is stored, so the next call asks again.
+     * [fetch] once and then kept (until [testConnection] finds a new name). When the machine cannot be reached or
+     * reports no device, [FALLBACK_DEVICE] is returned and nothing is stored, so the next call asks again.
      */
     suspend fun device(machine: Machine, fetch: suspend (Machine) -> Result<MachineInfo>): String {
         deviceNames.getString(machine.origin, null)?.let { return it }
@@ -47,6 +47,16 @@ class MachineStore(context: Context) {
         deviceNames.edit().putString(machine.origin, device).apply()
         return device
     }
+
+    /**
+     * The settings screen's "Test connection": always asks [fetch] (never the kept name) and, when the machine answers
+     * with a device name, keeps it in place of the old one, so a device renamed in Tailscale shows its new name. A
+     * failed fetch or an answer with no device leaves the kept name alone.
+     */
+    suspend fun testConnection(machine: Machine, fetch: suspend (Machine) -> Result<MachineInfo>): Result<MachineInfo> =
+        fetch(machine).onSuccess { info ->
+            info.you?.device?.takeIf { it.isNotBlank() }?.let { deviceNames.edit().putString(machine.origin, it).apply() }
+        }
 
     private fun update(change: (List<Machine>) -> Result<List<Machine>>): Result<List<Machine>> =
         synchronized(lock) {

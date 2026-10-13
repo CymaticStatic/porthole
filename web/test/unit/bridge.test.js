@@ -30,6 +30,17 @@ test("a native error answer rejects with its message; off() stops an event liste
   native.onmessage({ data: JSON.stringify({ event: "network", data: {} }) });
   expect(n).toBe(1);
 });
+test("openSettings is one of the eight allowed methods and reaches the app; a lookalike is refused", async () => {
+  const sent = []; const native = { postMessage: (s) => sent.push(JSON.parse(s)), onmessage: null };
+  const b = createBridge({ PortholeNative: native });
+  const p = b.call("openSettings", { screen: "battery" });
+  expect(sent[0].method).toBe("openSettings");
+  expect(sent[0].args).toEqual({ screen: "battery" });
+  native.onmessage({ data: JSON.stringify({ id: sent[0].id, ok: true, result: null }) });
+  expect(await p).toBeNull();
+  await expect(b.call("openSettings ", { screen: "battery" })).rejects.toThrow("not allowed");
+  expect(sent.length).toBe(1);
+});
 
 const emit = (native, event, data) => native.onmessage({ data: JSON.stringify({ event, data }) });
 

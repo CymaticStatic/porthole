@@ -3,6 +3,8 @@
     <!-- Your computers (MachinesActivity) -->
     <string name="settings_machines_title">Your computers</string>
     <string name="settings_machines_intro">Porthole talks to these computers over your private Tailscale network.</string>
+    <string name="settings_stay_connected">Stay connected in the background</string>
+    <string name="settings_stay_connected_help">When this is on, Porthole keeps a quiet connection to your computers so it can tell you when a session needs you. When it is off, Porthole disconnects and stays disconnected, even after you open the app or restart the phone, and you will not get alerts about your sessions. Turn it back on any time.</string>
     <string name="settings_machines_empty">No computers yet. Add one below.</string>
     <string name="settings_machine_rename">Rename</string>
     <string name="settings_machine_remove">Remove</string>

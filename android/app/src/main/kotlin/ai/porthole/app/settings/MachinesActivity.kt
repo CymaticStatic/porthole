@@ -3,6 +3,8 @@ package ai.porthole.app.settings
 import ai.porthole.app.Graph
 import ai.porthole.app.MachineStore
 import ai.porthole.app.R
+import ai.porthole.app.events.BackgroundPref
+import ai.porthole.app.events.EventsService
 import ai.porthole.app.net.HostClient
 import ai.porthole.shared.Machine
 import ai.porthole.shared.MachineInfo
@@ -26,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,7 +37,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -52,16 +57,23 @@ class MachinesActivity : ComponentActivity() {
     }
 }
 
-/** Connects [MachinesScreen] to the machine store and to hostd. */
+/** Connects [MachinesScreen] to the machine store, to hostd and to the background switch. */
 @Composable
 fun MachinesRoute(store: MachineStore, host: HostClient) {
+    val context = LocalContext.current
     val machines by store.machines.collectAsStateWithLifecycle()
+    var stayConnected by remember { mutableStateOf(BackgroundPref(context).enabled) }
     MachinesScreen(
         machines = machines,
         onAdd = store::add,
         onRename = store::rename,
         onRemove = store::remove,
-        onTest = host::machine,
+        onTest = { machine -> store.testConnection(machine, host::machine) },
+        stayConnected = stayConnected,
+        onStayConnectedChange = { on ->
+            stayConnected = on
+            EventsService.setStayConnected(context, on)
+        },
     )
 }
 
@@ -72,6 +84,8 @@ fun MachinesScreen(
     onRename: (oldName: String, newName: String) -> Result<List<Machine>>,
     onRemove: (name: String) -> Unit,
     onTest: suspend (Machine) -> Result<MachineInfo>,
+    stayConnected: Boolean,
+    onStayConnectedChange: (Boolean) -> Unit,
 ) {
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         LazyColumn(
@@ -84,6 +98,27 @@ fun MachinesScreen(
             }
             item {
                 Text(stringResource(R.string.settings_machines_intro), style = MaterialTheme.typography.bodyMedium)
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.settings_stay_connected),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = stayConnected,
+                            onCheckedChange = onStayConnectedChange,
+                            modifier = Modifier.testTag(TAG_STAY_CONNECTED),
+                        )
+                    }
+                    Text(stringResource(R.string.settings_stay_connected_help), style = MaterialTheme.typography.bodyMedium)
+                }
             }
             if (machines.isEmpty()) {
                 item {
@@ -218,6 +253,7 @@ private fun RenameDialog(
 }
 
 internal const val TAG_LIST = "machines-list"
+internal const val TAG_STAY_CONNECTED = "stay-connected"
 internal const val TAG_EMPTY = "machines-empty"
 internal const val TAG_CONFIRM_REMOVE = "confirm-remove"
 internal const val TAG_RENAME_FIELD = "rename-field"

@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { readAllUtterances, summaryUtterances } from "../../src/lib/speech.js";
+import { copy } from "../../src/lib/copy.js";
+import { createBridge } from "../../src/net/bridge.js";
+import { readAllUtterances, speakThroughBridge, summaryUtterances } from "../../src/lib/speech.js";
 
 const lines = readFileSync(path.join(import.meta.dir, "..", "fixtures", "reply-p3.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
 const reply = lines.at(-1).message.content.find((p) => p.type === "text").text;
@@ -49,4 +51,26 @@ test("read all: the fixture reply, numbered items spoken in full", () => {
 test("entities are spoken as characters", () => {
   expect(summaryUtterances("Tom &amp; Jerry &lt;3.\n\n## Needs your decision\n\n1. **R&amp;D budget**")).toEqual(["Tom & Jerry <3.", "1. R&D budget"]);
   expect(readAllUtterances("A &amp; B.")).toEqual(["A & B."]);
+});
+
+/** A bridge whose native side answers every call with `reply` (plus the call's id). */
+function bridgeAnswering(reply) {
+  const sent = [];
+  const native = { postMessage: (s) => { const m = JSON.parse(s); sent.push(m); queueMicrotask(() => native.onmessage({ data: JSON.stringify({ id: m.id, ...reply }) })); }, onmessage: null };
+  return { bridge: createBridge({ PortholeNative: native }), sent };
+}
+test("speaking through the app: a finished reading and a stopped one are not failures", async () => {
+  const done = bridgeAnswering({ ok: true, result: { finished: true } });
+  expect(await speakThroughBridge(done.bridge, ["One.", "Two."])).toBe(true);
+  expect(done.sent[0].method).toBe("speak");
+  expect(done.sent[0].args).toEqual({ utterances: ["One.", "Two."] });
+  const stopped = bridgeAnswering({ ok: true, result: { finished: false } });
+  expect(await speakThroughBridge(stopped.bridge, ["One."])).toBe(true);
+});
+test("speaking through the app: an error answer (the phone could not speak it) is a failure", async () => {
+  const failed = bridgeAnswering({ ok: false, error: "Text-to-speech failed" });
+  expect(await speakThroughBridge(failed.bridge, ["One."])).toBe(false);
+});
+test("read-aloud failure words", () => {
+  expect(copy.readAloudFailed).toBe("Couldn't read this aloud.");
 });

@@ -1,6 +1,8 @@
 package ai.porthole.app.web
 
 import ai.porthole.app.Graph
+import ai.porthole.app.settings.BatteryGuideActivity
+import ai.porthole.app.settings.MachinesActivity
 import ai.porthole.app.share.PickedFile
 import ai.porthole.app.voice.AndroidAudioFocus
 import ai.porthole.app.voice.AndroidTts
@@ -44,7 +46,7 @@ import kotlinx.serialization.json.put
 class Reply(val text: String, val onPosted: () -> Unit = {})
 
 /**
- * The seven bridge methods the page can call (design decision 6; the page's own list is `ALLOWED` in
+ * The eight bridge methods the page can call (design decision 6; the page's own list is `ALLOWED` in
  * `web/src/net/bridge.js`). A call must come from the main thread: it opens pickers and starts activities.
  *
  * Everything that touches the phone is a parameter, so tests replace it. [pick] uploads a chosen file to the machine
@@ -105,6 +107,10 @@ class BridgeMethods(
                 }
                 "openExternal" -> {
                     openExternal(BridgeProtocol.externalArgs(call.args).getOrThrow())
+                    result(call, JsonNull)
+                }
+                "openSettings" -> {
+                    openSettings(BridgeProtocol.settingsArgs(call.args).getOrThrow())
                     result(call, JsonNull)
                 }
                 else -> Reply(BridgeProtocol.error(call.id, "Bridge method not allowed: ${call.method}"))
@@ -195,6 +201,16 @@ class BridgeMethods(
 
     private suspend fun encode(rec: Recording): String =
         withContext(Dispatchers.IO) { Base64.getEncoder().encodeToString(rec.file.readBytes()) }
+
+    private fun openSettings(screen: BridgeProtocol.SettingsScreen) {
+        val target = when (screen) {
+            BridgeProtocol.SettingsScreen.MACHINES -> MachinesActivity::class.java
+            BridgeProtocol.SettingsScreen.BATTERY -> BatteryGuideActivity::class.java
+        }
+        val intent = Intent(context, target)
+        if (context !is Activity) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }
 
     private fun openExternal(target: BridgeProtocol.ExternalTarget) {
         when (target) {

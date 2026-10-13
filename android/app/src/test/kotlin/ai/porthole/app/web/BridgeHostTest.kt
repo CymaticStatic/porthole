@@ -49,6 +49,7 @@ private class FakeRegistry(var supported: Boolean = true) : WebMessageRegistry {
 
 private class QuietEngine : TtsEngine {
     override var listener: ((id: String, done: Boolean) -> Unit)? = null
+    override var errorListener: ((id: String) -> Unit)? = null
     override fun speak(text: String, id: String) = Unit
     override fun stop() = Unit
 }
@@ -155,14 +156,14 @@ class BridgeHostTest {
 
     @Test
     fun anUnknownMethodAndBrokenMessagesAnswerWithAnError() {
-        host.handle("https://desk.tailx.ts.net", true, call(9, "openSettings"), post)
+        host.handle("https://desk.tailx.ts.net", true, call(9, "readFile"), post)
         host.handle("https://desk.tailx.ts.net", true, """{"id":10,"method":42}""", post)
         host.handle("https://desk.tailx.ts.net", true, "not json", post) // no id to answer
 
         assertEquals(2, replies.size)
         val first = Json.parseToJsonElement(replies[0]).jsonObject
         assertFalse(first["ok"]!!.jsonPrimitive.boolean)
-        assertEquals("Bridge method not allowed: openSettings", first["error"]!!.jsonPrimitive.content)
+        assertEquals("Bridge method not allowed: readFile", first["error"]!!.jsonPrimitive.content)
         assertFalse(Json.parseToJsonElement(replies[1]).jsonObject["ok"]!!.jsonPrimitive.boolean)
     }
 

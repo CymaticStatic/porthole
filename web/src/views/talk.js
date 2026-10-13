@@ -7,7 +7,7 @@ import { finishedReplies } from "../lib/chatmodel.js";
 import { ago } from "../lib/format.js";
 import { asObject } from "../lib/json.js";
 import { createSilence } from "../lib/silence.js";
-import { readAllUtterances, summaryUtterances } from "../lib/speech.js";
+import { readAllUtterances, speakThroughBridge, summaryUtterances } from "../lib/speech.js";
 import { defaultStorage } from "../lib/storage.js";
 import { createTalkHistory } from "../lib/talkhistory.js";
 import { encodeWav, resample } from "../lib/wav.js";
@@ -32,6 +32,8 @@ import { encodeWav, resample } from "../lib/wav.js";
 const SAMPLE_RATE = 16000;
 /** Longest browser recording. hostd refuses more than 25 MB (about 13 minutes of 16 kHz mono); 10 minutes also keeps the unconverted samples small. */
 const MAX_RECORDING_MS = 600_000;
+/** How long "Couldn't read this aloud." stays up. */
+const FAILED_NOTE_MS = 8000;
 
 /** Overlays open right now: while one is open every finished reply is read aloud. */
 let talkOpen = 0;
@@ -64,6 +66,8 @@ function createSpeaker(ctx) {
   let cancelNow = null;
   /** @type {Set<(speaking: boolean) => void>} */
   const listeners = new Set();
+  /** @type {Set<() => void>} */
+  const failListeners = new Set();
 
   /** @param {boolean} v */
   function setActive(v) {
@@ -91,7 +95,10 @@ function createSpeaker(ctx) {
       cancelNow = finish;
       const bridge = ctx.bridge;
       if (bridge?.available) {
-        bridge.call("speak", { utterances }).then(finish, finish);
+        speakThroughBridge(bridge, utterances).then((ok) => {
+          if (!ok && token === mine) for (const fn of [...failListeners]) { try { fn(); } catch { /* one listener must not stop the others */ } }
+          finish();
+        });
         return;
       }
       const synth = globalThis.speechSynthesis;
@@ -155,7 +162,12 @@ function createSpeaker(ctx) {
       listeners.add(fn);
       return () => { listeners.delete(fn); };
     },
-    clearListeners: () => listeners.clear(),
+    clearListeners: () => { listeners.clear(); failListeners.clear(); },
+    /** Called when the app's text-to-speech could not read a batch (not when Ben stopped it). @param {() => void} fn */
+    onFail(fn) {
+      failListeners.add(fn);
+      return () => { failListeners.delete(fn); };
+    },
   };
 }
 
@@ -173,7 +185,24 @@ export function attachReadAloud(ctx, chatEvents) {
 
   const pill = h("button", { type: "button", class: "talk-stop-reading", "data-test": "stop-reading", hidden: true, on: { click: () => speaker.stop() } }, speakerGlyph(), copy.stopReading);
   document.body.append(pill);
-  const offState = speaker.onChange((on) => { pill.hidden = !on; });
+  // Where the speech status shows (the "Stop reading" pill), a failed reading says so, then goes away by itself.
+  const failedNote = h("p", { class: "talk-read-failed", role: "status", "data-test": "read-failed", hidden: true }, copy.readAloudFailed);
+  document.body.append(failedNote);
+  /** @type {ReturnType<typeof setTimeout> | undefined} */
+  let failedTimer;
+  function hideFailed() {
+    clearTimeout(failedTimer);
+    failedNote.hidden = true;
+  }
+  const offFail = speaker.onFail(() => {
+    hideFailed();
+    failedNote.hidden = false;
+    failedTimer = setTimeout(hideFailed, FAILED_NOTE_MS);
+  });
+  const offState = speaker.onChange((on) => {
+    pill.hidden = !on;
+    if (on) hideFailed();
+  });
 
   const offItems = chatEvents.on("items", (items) => {
     if (!Array.isArray(items)) return;
@@ -202,10 +231,13 @@ export function attachReadAloud(ctx, chatEvents) {
     detach() {
       offItems();
       offState();
+      offFail();
       for (const c of buttonCleanups.splice(0)) c();
       speaker.stop();
       speaker.clearListeners();
+      hideFailed();
       pill.remove();
+      failedNote.remove();
     },
   };
   return api;

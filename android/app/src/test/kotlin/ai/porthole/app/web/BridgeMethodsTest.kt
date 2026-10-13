@@ -1,5 +1,7 @@
 package ai.porthole.app.web
 
+import ai.porthole.app.settings.BatteryGuideActivity
+import ai.porthole.app.settings.MachinesActivity
 import ai.porthole.app.share.PickedFile
 import ai.porthole.app.voice.AudioFocus
 import ai.porthole.app.voice.LastRecording
@@ -52,11 +54,16 @@ import org.robolectric.annotation.Config
 
 private class FakeEngine : TtsEngine {
     override var listener: ((id: String, done: Boolean) -> Unit)? = null
+    override var errorListener: ((id: String) -> Unit)? = null
     val spoken = CopyOnWriteArrayList<String>()
     var stops = 0
 
+    /** When set, every utterance fails (error, then end) instead of being spoken. */
+    var failing = false
+
     override fun speak(text: String, id: String) {
         spoken.add(text)
+        if (failing) errorListener?.invoke(id)
         listener?.invoke(id, true)
     }
 
@@ -201,6 +208,22 @@ class BridgeMethodsTest {
         val result = ok(reply(desk, "speak", args("utterances" to buildJsonArray { add("one"); add("two") })))
         assertEquals(buildJsonObject { put("finished", true) }, result)
         assertEquals(listOf("one", "two"), engine.spoken.toList())
+    }
+
+    @Test
+    fun speakThatTheEngineCouldNotSpeakIsAnErrorReplyNotFinished() {
+        engine.failing = true
+        val message = errorOf(reply(desk, "speak", args("utterances" to buildJsonArray { add("one"); add("two") })))
+        assertEquals("Text-to-speech failed", message)
+        assertEquals("both were handed to the engine", listOf("one", "two"), engine.spoken.toList())
+    }
+
+    @Test
+    fun speakWorksAgainAfterAFailedReading() {
+        engine.failing = true
+        errorOf(reply(desk, "speak", args("utterances" to buildJsonArray { add("one") })))
+        engine.failing = false
+        assertEquals(buildJsonObject { put("finished", true) }, ok(reply(desk, "speak", args("utterances" to buildJsonArray { add("two") }))))
     }
 
     @Test
@@ -415,8 +438,31 @@ class BridgeMethodsTest {
     // --- everything else ----------------------------------------------------------------------------------------
 
     @Test
-    fun anUnknownMethodIncludingOpenSettingsIsNotAllowed() {
-        assertEquals("Bridge method not allowed: openSettings", errorOf(reply(desk, "openSettings")))
+    fun openSettingsMachinesStartsTheMachinesScreen() {
+        assertEquals(JsonNull, ok(reply(desk, "openSettings", args("screen" to JsonPrimitive("machines")))))
+        val intent = started()!!
+        assertEquals(MachinesActivity::class.java.name, intent.component!!.className)
+    }
+
+    @Test
+    fun openSettingsBatteryStartsTheBatteryGuide() {
+        assertEquals(JsonNull, ok(reply(desk, "openSettings", args("screen" to JsonPrimitive("battery")))))
+        val intent = started()!!
+        assertEquals(BatteryGuideActivity::class.java.name, intent.component!!.className)
+    }
+
+    @Test
+    fun openSettingsRefusesAnyOtherScreen() {
+        for (screen in listOf("wear", "", "MACHINES", "../machines")) {
+            errorOf(reply(desk, "openSettings", args("screen" to JsonPrimitive(screen))))
+        }
+        errorOf(reply(desk, "openSettings"))
+        errorOf(reply(desk, "openSettings", args("screen" to JsonPrimitive(1))))
+        assertNull("nothing was started", started())
+    }
+
+    @Test
+    fun anUnknownMethodIsNotAllowed() {
         assertEquals("Bridge method not allowed: nope", errorOf(reply(desk, "nope")))
     }
 }

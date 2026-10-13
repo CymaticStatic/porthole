@@ -7,6 +7,7 @@ import { copy } from "../lib/copy.js";
 import { ACTIONS, DEFAULT_GESTURES, FONT_STEPS, mergeGestureMap, nextFontSize } from "../lib/gestures.js";
 import { asObject } from "../lib/json.js";
 import { parseSteps } from "../lib/steps.js";
+import { phoneSettingsLinks } from "../lib/phonesettings.js";
 
 /** @typedef {Pick<import("../lib/types.js").Ctx, "fleet" | "settings" | "bridge"> & {route: {view: string, machine?: string}}} Ctx */
 
@@ -300,13 +301,35 @@ export function mount(root, ctx) {
       failed);
   }
 
+  // ---- Phone settings (the Android app only: native screens, so nothing to show in a plain browser) ----
+  /** @type {HTMLElement | null} */
+  let phoneSection = null;
+  const phoneLinks = phoneSettingsLinks(ctx.bridge, copy);
+  if (phoneLinks.length > 0) {
+    const phoneFailed = h("p", { class: "set-error", role: "alert", hidden: true, "data-test": "phone-settings-failed" }, copy.phoneSettingsFailed);
+    phoneSection = section(copy.phoneSettings,
+      h("div", { class: "set-stack" }, ...phoneLinks.map((link) => h("button", {
+        type: "button",
+        class: "btn",
+        "data-test": link.test,
+        on: {
+          click: () => {
+            phoneFailed.hidden = true;
+            ctx.bridge.call("openSettings", { screen: link.screen }).catch(() => { phoneFailed.hidden = false; });
+          },
+        },
+      }, link.label))),
+      phoneFailed);
+  }
+
   const view = h("div", { class: "settings-view", "data-test": "settings" },
     h("h1", { class: "set-title" }, copy.settingsTitle),
     section(copy.machinesTitle, ...machineParts),
     talkSection,
     gesturesSection,
     textSizeSection,
-    notificationsSection);
+    notificationsSection,
+    phoneSection);
   root.append(view);
 
   const syncAll = () => { for (const fn of syncs) fn(); };

@@ -28,9 +28,9 @@ class BridgeProtocolTest {
         assertEquals(JsonObject(emptyMap()), p.args)
     }
 
-    @Test fun methodsAreExactlyTheSevenThePageSends() {
+    @Test fun methodsAreExactlyTheEightThePageSends() {
         assertEquals(
-            setOf("machines", "speak", "stopSpeaking", "startRecording", "stopRecording", "pickFile", "openExternal"),
+            setOf("machines", "speak", "stopSpeaking", "startRecording", "stopRecording", "pickFile", "openExternal", "openSettings"),
             BridgeProtocol.METHODS,
         )
         for (m in BridgeProtocol.METHODS) {
@@ -39,10 +39,29 @@ class BridgeProtocolTest {
     }
 
     @Test fun unknownMethodsAreBadWithThePageAdapterWords() {
-        for (m in listOf("readFile", "eval", "openSettings", "")) {
+        for (m in listOf("readFile", "eval", "openSettings ", "")) {
             val p = BridgeProtocol.parse("""{"id":3,"method":"$m","args":{}}""")
             assertEquals(BridgeProtocol.Parsed.Bad(JsonPrimitive(3), "Bridge method not allowed: $m"), p)
         }
+    }
+
+    @Test fun openSettingsParsesAndNamesOneOfTwoScreens() {
+        val p = BridgeProtocol.parse("""{"id":4,"method":"openSettings","args":{"screen":"battery"}}""") as BridgeProtocol.Parsed.Call
+        assertEquals("openSettings", p.method)
+        assertEquals(BridgeProtocol.SettingsScreen.BATTERY, BridgeProtocol.settingsArgs(p.args).getOrThrow())
+        assertEquals(
+            BridgeProtocol.SettingsScreen.MACHINES,
+            BridgeProtocol.settingsArgs(buildJsonObject { put("screen", "machines") }).getOrThrow(),
+        )
+    }
+
+    @Test fun openSettingsRefusesAnyOtherScreen() {
+        assertTrue(BridgeProtocol.settingsArgs(JsonObject(emptyMap())).isFailure)
+        for (s in listOf("", "Machines", "battery ", "notifications", "../battery", "porthole://machines")) {
+            assertTrue(s, BridgeProtocol.settingsArgs(buildJsonObject { put("screen", s) }).isFailure)
+        }
+        assertTrue(BridgeProtocol.settingsArgs(buildJsonObject { put("screen", 1) }).isFailure)
+        assertTrue(BridgeProtocol.settingsArgs(buildJsonObject { put("screen", JsonArray(listOf(JsonPrimitive("machines")))) }).isFailure)
     }
 
     @Test fun malformedMessagesAreBad() {
