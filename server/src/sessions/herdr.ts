@@ -8,7 +8,7 @@ import { asArray, asRecord, asString } from "../json";
 export interface HerdrAgent { workspace: string; tab: string; pane: string; status: string; name: string; agent: string; cwd: string; title: string; focused: boolean }
 
 export function herdrError(r: RunResult): string {
-  if (r.timedOut) return "herdr did not answer within 5 s";
+  if (r.timedOut) return "herdr " + r.stderr;
   try {
     const msg = asString(asRecord(asRecord(JSON.parse(r.stderr)).error).message);
     if (msg) return msg;

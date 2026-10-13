@@ -3,8 +3,8 @@ import type { ConfigOverrides } from "../../src/config";
 import { createHostd, type Hostd } from "../../src/hostd";
 import type { FeatureFactory } from "../../src/router";
 import { sessionId } from "../../src/sessions/ids";
-import { findOmp, readProcTable } from "../../src/sessions/procs";
-import { type Scratch, waitFor } from "./scratch";
+import { findOmp, readProcTable, transcriptOf } from "../../src/sessions/procs";
+import { boundedMs, DEFAULT_WAIT_MS, type Scratch, waitFor } from "./scratch";
 
 export type TestHostd = Hostd;
 
@@ -59,13 +59,14 @@ export async function openWs(h: TestHostd, p: string, origin: string = h.config.
   };
   const closed = new Promise<number>((resolve) => { ws.onclose = (e: CloseEvent) => resolve(e.code); });
   await new Promise<void>((resolve, reject) => {
-    ws.onopen = () => resolve();
-    ws.onerror = () => reject(new Error("WebSocket to " + p + " did not open"));
+    const timer = setTimeout(() => { ws.close(); reject(new Error("WebSocket to " + p + " did not open in time")); }, boundedMs(DEFAULT_WAIT_MS));
+    ws.onopen = () => { clearTimeout(timer); resolve(); };
+    ws.onerror = () => { clearTimeout(timer); reject(new Error("WebSocket to " + p + " did not open")); };
   });
   return {
     ws,
     seen,
-    async next(type, timeoutMs = 3000) {
+    async next(type, timeoutMs = DEFAULT_WAIT_MS) {
       let found: WsMessage | undefined;
       await waitFor(() => {
         found = seen.find((m) => m.type === type && !taken.has(m));
@@ -87,7 +88,7 @@ export function rawUpgrade(port: number, p: string, headers: Record<string, stri
   return new Promise((resolve) => {
     const sock = connect(port, "127.0.0.1", () => sock.write(lines.join("\r\n") + "\r\n\r\n"));
     let buf = "";
-    const timer = setTimeout(() => { sock.destroy(); resolve(0); }, 3000);
+    const timer = setTimeout(() => { sock.destroy(); resolve(0); }, boundedMs(DEFAULT_WAIT_MS));
     sock.on("data", (d: Buffer) => {
       buf += d.toString("latin1");
       const m = /^HTTP\/1\.1 (\d{3})/.exec(buf);
@@ -106,13 +107,14 @@ export async function pane(s: Scratch, session: string, command = "/bin/sh", soc
   return { socket: sock, pid: s.panePid(sock, "=" + session + ":0.0"), id: sessionId({ kind: "tmux", socket: sock, session, window: 0, pane: 0 }) };
 }
 
-/** A scratch tmux session running the fake omp on `transcript`; `pid` = the omp process. */
+/** A scratch tmux session running the fake omp on `transcript`; `pid` = the omp process, returned once it holds the transcript open. */
 export async function ompPane(s: Scratch, session: string, transcript: string, socket?: string): Promise<TestPane> {
   const p = await pane(s, session, s.ompCommand(transcript), socket);
   let pid = 0;
+  // comm is "omp" from exec on, before the script has opened its transcript: wait for the open file as well.
   await waitFor(() => {
     pid = findOmp(readProcTable(), p.pid) ?? 0;
-    return pid > 0;
+    return pid > 0 && transcriptOf(pid, [s.transcripts]) !== null;
   });
   return { ...p, pid };
 }

@@ -5,7 +5,9 @@ import type { HostdConfig } from "../src/config";
 import { sessionId } from "../src/sessions/ids";
 import { Registry, type SessionInfo, type Tree } from "../src/sessions/registry";
 import { statusFromTranscript } from "../src/sessions/status";
-import { type HerdrAgentFixture, Scratch, waitFor } from "./helpers/scratch";
+import { type HerdrAgentFixture, Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 let cfg: HostdConfig;
@@ -117,7 +119,7 @@ test("an idle registry does not scan; watching scans; stopping stops", async () 
   await Bun.sleep(cfg.scanIntervalMs * 3);
   expect(s.fakeCalls("herdr").length).toBe(0);
   r.startWatching();
-  await waitFor(() => s.fakeCalls("herdr").length > 0, 3000);
+  await waitFor(() => s.fakeCalls("herdr").length > 0);
   r.stopWatching();
   await Bun.sleep(cfg.scanIntervalMs);
   const n = s.fakeCalls("herdr").length;

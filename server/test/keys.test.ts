@@ -5,7 +5,9 @@ import { SentLog } from "../src/deliver/sentlog";
 import { sessionId } from "../src/sessions/ids";
 import { Registry } from "../src/sessions/registry";
 import { ompPane, pane } from "./helpers/client";
-import { type HerdrAgentFixture, Scratch, waitFor } from "./helpers/scratch";
+import { type HerdrAgentFixture, Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 let d: Deliverer;

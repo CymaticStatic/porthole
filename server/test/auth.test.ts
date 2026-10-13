@@ -5,7 +5,9 @@ import { AccessLog } from "../src/auth/accesslog";
 import { Auth } from "../src/auth/auth";
 import { Whois } from "../src/auth/identity";
 import { ensureLocalToken, localTokenPath } from "../src/auth/localtoken";
-import { Scratch } from "./helpers/scratch";
+import { Scratch, useTestTimeout } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 let auth: Auth;

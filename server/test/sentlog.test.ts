@@ -3,7 +3,9 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import path from "node:path";
 import { CLIENT_MSG_ID, commitInbox, inboxDir, stageInbox, waitTaken } from "../src/deliver/inbox";
 import { SentLog } from "../src/deliver/sentlog";
-import { Scratch } from "./helpers/scratch";
+import { Scratch, useTestTimeout } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 beforeEach(() => { s = new Scratch(); });

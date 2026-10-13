@@ -3,7 +3,9 @@ import { appendFileSync, chmodSync, truncateSync } from "node:fs";
 import { chatFeature } from "../src/features/chat";
 import { sessionId } from "../src/sessions/ids";
 import { get, ompPane, openWs, pane, startTestHostd, type TestHostd } from "./helpers/client";
-import { Scratch, waitFor } from "./helpers/scratch";
+import { Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 let h: TestHostd;
@@ -38,13 +40,13 @@ test("WebSocket backlog, then append, then a new backlog after the file shrinks"
   const file = s.transcript("chat-basic.jsonl", "live.jsonl");
   const p = await ompPane(s, "omp", file);
   const ws = await openWs(h, chatPath(p.id));
-  const first = await ws.next("backlog", 3000);
+  const first = await ws.next("backlog");
   expect((first.page as PageBody).items.at(-1)?.text).toBe("Also check the tests");
   appendFileSync(file, userLine("u90", "new from the test"));
-  const add = await ws.next("append", 3000);
+  const add = await ws.next("append");
   expect((add.items as Item[]).map((i) => i.text)).toEqual(["new from the test"]);
   truncateSync(file, 0);
-  const again = await ws.next("backlog", 3000);
+  const again = await ws.next("backlog");
   expect((again.page as PageBody).items).toEqual([]);
   ws.close();
 });
@@ -53,7 +55,7 @@ test("a failed re-read after a shrink keeps the old follower; updates resume on 
   const file = s.transcript("chat-basic.jsonl", "live.jsonl");
   const p = await ompPane(s, "omp", file);
   const ws = await openWs(h, chatPath(p.id));
-  await ws.next("backlog", 3000);
+  await ws.next("backlog");
   // Shrunk and unreadable in the same instant: the follower sees the shrink, the re-read throws.
   truncateSync(file, 0);
   chmodSync(file, 0o000);
@@ -62,7 +64,7 @@ test("a failed re-read after a shrink keeps the old follower; updates resume on 
   expect(ws.seen.filter((m) => m.type === "backlog").length).toBe(1);
   chmodSync(file, 0o644);
   appendFileSync(file, userLine("u91", "after the failed re-read"));
-  const add = await ws.next("append", 3000);
+  const add = await ws.next("append");
   expect((add.items as Item[]).map((i) => i.text)).toEqual(["after the failed re-read"]);
   ws.close();
 });
@@ -72,13 +74,13 @@ test("a different transcript in the same pane (omp /new) restarts the follower o
   const fileB = s.writeTranscript("b.jsonl", userLine("b1", "from file B"));
   const p = await ompPane(s, "omp", fileA);
   const ws = await openWs(h, chatPath(p.id));
-  await ws.next("backlog", 3000);
+  await ws.next("backlog");
   s.tmux(p.socket, "respawn-pane", "-k", "-t", "=omp:0.0", s.ompCommand(fileB));
-  const moved = await ws.next("backlog", 5000);
+  const moved = await ws.next("backlog");
   expect((moved.page as PageBody).items.map((i) => i.text)).toEqual(["from file B"]);
   appendFileSync(fileA, userLine("a99", "old file, ignored"));
   appendFileSync(fileB, userLine("b2", "B again"));
-  const add = await ws.next("append", 3000);
+  const add = await ws.next("append");
   expect((add.items as Item[]).map((i) => i.text)).toEqual(["B again"]);
   await Bun.sleep(500);
   expect(JSON.stringify(ws.seen)).not.toContain("old file, ignored");
@@ -91,7 +93,7 @@ test("no transcript: HTTP note and a WebSocket error", async () => {
   expect(r.status).toBe(200);
   expect(((await r.json()) as PageBody).note).toBe("this session has no omp transcript; use Terminal or Screen");
   const ws = await openWs(h, chatPath(p.id));
-  expect((await ws.next("error", 3000)).error).toBe("this session has no omp transcript");
+  expect((await ws.next("error")).error).toBe("this session has no omp transcript");
   expect(await ws.closed).toBe(1000);
 });
 
@@ -113,6 +115,6 @@ test("unknown session: 404 on chat and screen, error on the channel", async () =
   expect((await get(h, chatPath(id))).status).toBe(404);
   expect((await get(h, "/v1/sessions/" + encodeURIComponent(id) + "/screen")).status).toBe(404);
   const ws = await openWs(h, chatPath(id));
-  expect((await ws.next("error", 3000)).error).toBe("no such session");
+  expect((await ws.next("error")).error).toBe("no such session");
   expect(await ws.closed).toBe(1000);
 });

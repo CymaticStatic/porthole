@@ -4,7 +4,9 @@ import { cleanEnv } from "../src/exec";
 import { sessionId } from "../src/sessions/ids";
 import { listClients, socketPath } from "../src/sessions/tmux";
 import { openWs, ompPane, pane, startTestHostd, type TestHostd } from "./helpers/client";
-import { Scratch, waitFor } from "./helpers/scratch";
+import { Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 let h: TestHostd;
@@ -13,8 +15,11 @@ beforeEach(async () => {
   h = await startTestHostd(s, [ptyFeature]);
 });
 afterEach(async () => {
-  await h.stop();
-  s.cleanup();
+  try {
+    await h.stop();
+  } finally {
+    s.cleanup();
+  }
 });
 
 const enc = new TextEncoder();
@@ -25,8 +30,8 @@ test("attach, type, see the echo", async () => {
   const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty?cols=100&rows=30");
   await waitFor(async () => (await listClients(h.config, p.socket)).length === 1);
   ws.send(enc.encode("echo pty-$((40+2))\r"));
-  await waitFor(() => ws.output().includes("pty-42"), 5000);
-  await waitFor(() => capture(p.socket, "work").includes("pty-42"), 5000);
+  await waitFor(() => ws.output().includes("pty-42"));
+  await waitFor(() => capture(p.socket, "work").includes("pty-42"));
   ws.close();
   expect(await ws.closed).toBe(1000);
 });
@@ -55,7 +60,7 @@ test("close detaches only our client", async () => {
     await waitFor(async () => {
       const left = await listClients(h.config, p.socket);
       return left.length === 1 && left[0].pid === other.pid;
-    }, 3000);
+    });
     // The second client stays attached after our socket is long closed.
     await Bun.sleep(500);
     const left = await listClients(h.config, p.socket);
@@ -69,7 +74,7 @@ test("live voice at open makes it read-only and typed bytes never reach the pane
   const p = await pane(s, "work", "cat");
   s.setLiveVoicePids([p.pid]);
   const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
-  expect((await ws.next("readonly", 3000)).reason).toBe("live voice is on; typing here would mix with it");
+  expect((await ws.next("readonly")).reason).toBe("live voice is on; typing here would mix with it");
   ws.send(enc.encode("never-typed\r"));
   await Bun.sleep(500);
   expect(capture(p.socket, "work")).not.toContain("never-typed");
@@ -87,7 +92,7 @@ test("live voice turning on mid-session drops input from then on", async () => {
   s.setLiveVoicePids([p.pid]);
   await Bun.sleep(h.config.scanIntervalMs + 100);
   ws.send(enc.encode("after-voice\r"));
-  expect((await ws.next("readonly", 3000)).reason).toBe("live voice is on; typing here would mix with it");
+  expect((await ws.next("readonly")).reason).toBe("live voice is on; typing here would mix with it");
   await Bun.sleep(500);
   expect(capture(p.socket, "work")).not.toContain("after-voice");
   s.setLiveVoicePids([]);
@@ -102,7 +107,7 @@ test("unknown live voice (pactl failing) makes an omp pane read-only", async () 
   const p = await ompPane(s, "omp", s.transcript("chat-basic.jsonl"));
   s.breakPactl(true);
   const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
-  expect((await ws.next("readonly", 3000)).reason).toBe("cannot tell if live voice is on, so typing is off");
+  expect((await ws.next("readonly")).reason).toBe("cannot tell if live voice is on, so typing is off");
   ws.close();
 });
 
@@ -112,7 +117,7 @@ test("unknown live voice (pactl failing) leaves a plain shell pane writable", as
   const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
   await waitFor(async () => (await listClients(h.config, p.socket)).length === 1);
   ws.send(enc.encode("plain-typed\r"));
-  await waitFor(() => capture(p.socket, "work").includes("plain-typed"), 5000);
+  await waitFor(() => capture(p.socket, "work").includes("plain-typed"));
   expect(ws.seen.some((m) => m.type === "readonly")).toBe(false);
   ws.close();
 });
@@ -125,12 +130,12 @@ test("the first input after an idle gap re-scans live voice instead of trusting 
   const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(p.id) + "/pty");
   await waitFor(async () => (await listClients(h.config, p.socket)).length === 1);
   ws.send(enc.encode("first-ok\r"));
-  await waitFor(() => capture(p.socket, "work").includes("first-ok"), 5000);
+  await waitFor(() => capture(p.socket, "work").includes("first-ok"));
   s.setLiveVoicePids([p.pid]);
   // Real delay on purpose: the idle gap itself (more than 1 s without input) is what is under test.
   await Bun.sleep(1200);
   ws.send(enc.encode("after-idle\r"));
-  expect((await ws.next("readonly", 3000)).reason).toBe("live voice is on; typing here would mix with it");
+  expect((await ws.next("readonly")).reason).toBe("live voice is on; typing here would mix with it");
   await Bun.sleep(300);
   expect(capture(p.socket, "work")).not.toContain("after-idle");
   ws.close();
@@ -156,13 +161,13 @@ test("herdr is read-only and streams the screen", async () => {
   s.setHerdrScreen("w1:p1", "hello herdr\n");
   const id = sessionId({ kind: "herdr", workspace: "w1", tab: "w1:t1", pane: "w1:p1" });
   const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent(id) + "/pty");
-  expect((await ws.next("readonly", 3000)).reason).toBe("herdr terminals are read-only in P1");
-  expect((await ws.next("screen", 3000)).text).toContain("hello herdr");
+  expect((await ws.next("readonly")).reason).toBe("herdr terminals are read-only in P1");
+  expect((await ws.next("screen")).text).toContain("hello herdr");
   ws.close();
 });
 
 test("unknown session gets an error and a clean close", async () => {
   const ws = await openWs(h, "/v1/sessions/" + encodeURIComponent("tmux:nope:nope:0.0") + "/pty");
-  expect((await ws.next("error", 3000)).error).toBe("no such session");
+  expect((await ws.next("error")).error).toBe("no such session");
   expect(await ws.closed).toBe(1000);
 });

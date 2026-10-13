@@ -26,12 +26,15 @@ export function listSockets(cfg: HostdConfig): string[] {
   }).sort();
 }
 
+/** Longest a tmux client may take. A healthy one answers in milliseconds; a hung one is killed instead of stalling hostd. */
+const TMUX_TIMEOUT_MS = 10_000;
+
 function tmux(cfg: HostdConfig, socket: string, args: string[], input?: string): Promise<RunResult> {
-  return run([cfg.bin.tmux, "-S", socketPath(cfg, socket), ...args], { env: cleanEnv(), input });
+  return run([cfg.bin.tmux, "-S", socketPath(cfg, socket), ...args], { env: cleanEnv(), input, timeoutMs: TMUX_TIMEOUT_MS });
 }
 
 function failure(r: RunResult): string {
-  return r.timedOut ? "tmux did not answer within 5 s" : r.stderr.trim() || "tmux exited with " + r.code;
+  return r.timedOut ? "tmux " + r.stderr : r.stderr.trim() || "tmux exited with " + r.code;
 }
 
 export async function listPanes(cfg: HostdConfig, socket: string): Promise<PaneList> {

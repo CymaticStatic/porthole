@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, readlinkSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { run } from "../src/exec";
-import { Scratch, waitFor } from "./helpers/scratch";
+import { Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 beforeEach(() => { s = new Scratch(); });
@@ -39,11 +41,14 @@ test("a fake omp pane has comm 'omp' and holds its transcript open", async () =>
   const t = s.writeTranscript("harness.jsonl", '{"type":"session"}\n');
   const sock = s.newTmuxServer("chat", s.ompCommand(t));
   let pid = 0;
+  let targets: string[] = [];
+  // comm turns "omp" at exec, before the script's `exec 3<transcript` has run, so wait for the open file itself.
   await waitFor(() => {
     pid = s.panePid(sock, "=chat:0.0");
-    return existsSync("/proc/" + pid + "/comm") && readFileSync("/proc/" + pid + "/comm", "utf8").trim() === "omp";
+    if (!existsSync("/proc/" + pid + "/comm") || readFileSync("/proc/" + pid + "/comm", "utf8").trim() !== "omp") return false;
+    targets = readdirSync("/proc/" + pid + "/fd").map((fd) => { try { return readlinkSync("/proc/" + pid + "/fd/" + fd); } catch { return ""; } });
+    return targets.includes(t);
   });
-  const targets = readdirSync("/proc/" + pid + "/fd").map((fd) => { try { return readlinkSync("/proc/" + pid + "/fd/" + fd); } catch { return ""; } });
   expect(targets).toContain(t);
 });
 
@@ -52,6 +57,6 @@ test("cleanup stops the scratch servers and removes the folder", () => {
   const root = s.root;
   s.cleanup();
   expect(existsSync(root)).toBe(false);
-  expect(Bun.spawnSync(["/usr/bin/tmux", "-S", path.join(root, "tmux", "tmux-" + process.getuid?.(), sock), "ls"]).exitCode).not.toBe(0);
+  expect(Bun.spawnSync(["/usr/bin/tmux", "-S", path.join(root, "tmux", "tmux-" + process.getuid?.(), sock), "ls"], { timeout: 5000, killSignal: "SIGKILL" }).exitCode).not.toBe(0);
   s = new Scratch();
 });

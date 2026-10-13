@@ -4,7 +4,9 @@ import path from "node:path";
 import type { ChatItem } from "../src/transcript/parse";
 import { parseLine } from "../src/transcript/parse";
 import { Follower, readAfter, readPage } from "../src/transcript/tail";
-import { FIXTURES, Scratch, waitFor } from "./helpers/scratch";
+import { FIXTURES, Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 beforeEach(() => { s = new Scratch(); });

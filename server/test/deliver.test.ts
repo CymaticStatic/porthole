@@ -9,7 +9,9 @@ import { sendFeature } from "../src/features/send";
 import { sessionId } from "../src/sessions/ids";
 import { Registry } from "../src/sessions/registry";
 import { localHeaders, ompPane, pane, post, startTestHostd } from "./helpers/client";
-import { type HerdrAgentFixture, Scratch, waitFor } from "./helpers/scratch";
+import { type HerdrAgentFixture, Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 let cfg: HostdConfig;

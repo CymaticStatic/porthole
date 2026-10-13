@@ -2,7 +2,9 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { defaultConfig, loadConfig, validateConfig, writeInitialConfig } from "../src/config";
-import { Scratch } from "./helpers/scratch";
+import { Scratch, useTestTimeout } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 beforeEach(() => { s = new Scratch(); });

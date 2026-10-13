@@ -6,7 +6,9 @@ import { machineFeature } from "../src/features/machine";
 import { sessionsFeature } from "../src/features/sessions";
 import type { FeatureFactory } from "../src/router";
 import { get, localHeaders, openWs, pane, rawUpgrade, startTestHostd, type TestHostd } from "./helpers/client";
-import { Scratch, waitFor } from "./helpers/scratch";
+import { Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 let h: TestHostd;
@@ -79,11 +81,11 @@ test("OPTIONS needs an exact allowed Origin (else 403) and never reaches a route
 test("events: snapshot on open, update on change, through the hub", async () => {
   const p = await pane(s, "one", "/bin/sh");
   const ws = await openWs(h, "/v1/events");
-  const first = await ws.next("sessions", 3000);
+  const first = await ws.next("sessions");
   expect(((first.tree as { sessions: unknown[] }).sessions).length).toBe(1);
   expect(h.hub.size).toBe(1);
   s.tmux(p.socket, "new-session", "-d", "-s", "two", "/bin/sh");
-  await waitFor(() => ws.seen.some((m) => m.type === "sessions" && (m.tree as { sessions: unknown[] }).sessions.length === 2), 5000);
+  await waitFor(() => ws.seen.some((m) => m.type === "sessions" && (m.tree as { sessions: unknown[] }).sessions.length === 2));
   ws.close();
   await waitFor(() => h.hub.size === 0);
 });

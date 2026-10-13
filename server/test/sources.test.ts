@@ -4,7 +4,9 @@ import path from "node:path";
 import { sessionId, tmuxTarget } from "../src/sessions/ids";
 import { capturePane, listClients, listPanes, listSockets, sendKeys, sendText } from "../src/sessions/tmux";
 import { listAgents, prompt, readScreen, sendKeys as herdrKeys } from "../src/sessions/herdr";
-import { Scratch, waitFor } from "./helpers/scratch";
+import { Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 beforeEach(() => { s = new Scratch(); });

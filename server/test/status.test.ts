@@ -4,7 +4,9 @@ import path from "node:path";
 import { liveVoicePids } from "../src/sessions/livevoice";
 import { findOmp, hasInbox, ompAlive, readProcTable, transcriptOf } from "../src/sessions/procs";
 import { HERDR_STATUS, statusFromTranscript } from "../src/sessions/status";
-import { FIXTURES, Scratch, waitFor } from "./helpers/scratch";
+import { FIXTURES, Scratch, useTestTimeout, waitFor } from "./helpers/scratch";
+
+useTestTimeout();
 
 let s: Scratch;
 beforeEach(() => { s = new Scratch(); });
