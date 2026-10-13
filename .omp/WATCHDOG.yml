@@ -9,7 +9,8 @@ instructions: |
     retried without its clientMsgId, or an audio file deleted before its transcription succeeded.
   - Flag hostd binding anything other than 127.0.0.1 or owner-only Unix sockets (ports 8797, 8798),
     or any /v1 path or WebSocket that skips the checks in docs/SPEC.md section 5.4 (Tailscale
-    identity + node allowlist, X-Porthole header, exact Origin for non-GET and WS upgrades).
+    identity + node allowlist, X-Porthole header on HTTP, exact Origin for non-GET and WS upgrades),
+    beyond the documented 127.0.0.1 limit in section 9.4.
   - Flag keys, Stop or option answers that can reach an omp pane in live voice (SPEC 4.3), and preview
     proxying of a port that was not discovered or is on the always-refused list (SPEC 4.10).
   - Flag a JS bridge exposed to any origin other than a configured machine's https://<name>.ts.net,

@@ -255,7 +255,7 @@ drawer on the phone. Its groups, top to bottom:
   command takes them). Commands: `status --porcelain=v2`, `diff`, `diff --cached`, and the untracked
   file list. Repo filters (e.g. git-lfs) are switched off too: for each driver in
   `git config --get-regexp '^filter\.'`, hostd adds `-c filter.<name>.process= -c filter.<name>.clean=`
-  and `-c filter.<name>.smudge=`. A live agent's commit therefore never collides with Porthole. Staged, unstaged and untracked files are listed
+  `-c filter.<name>.smudge=` and `-c filter.<name>.required=false`. A live agent's commit therefore never collides with Porthole. Staged, unstaged and untracked files are listed
   separately. A tap shows the diff: unified on the phone, side-by-side on wide screens. Binary files
   are listed, not shown. The button shows a badge when uncommitted changes exist (`dirty` in the session data, 5.2).
 - Not a git repo: the button is greyed out with "No git repo here".
@@ -274,8 +274,8 @@ drawer on the phone. Its groups, top to bottom:
   `tailscale serve` on HTTPS port 8443. Opening a preview hits `/__porthole/preview?port=N`, which
   sets a cookie. From then on that device's requests (including WebSockets, for hot reload) are
   proxied to `127.0.0.1:N` unchanged, so pages that use absolute paths still work. One preview at a
-  time per device. The Tailscale identity and node check of 5.4 applies (preview pages cannot send
-`X-Porthole`). Preview pages are a different
+    time per device. The Tailscale identity and node check of 5.4 applies (preview pages cannot send
+  `X-Porthole`). Preview pages are a different
   origin from the control room (port 8443 vs 443), and the API rejects them (5.4).
 
 ### 4.11 Agent usage (Moshi: agent usage)
@@ -385,7 +385,8 @@ drawer on the phone. Its groups, top to bottom:
 
 ### 5.2 API contract (all JSON; one version prefix `/v1`)
 Every `/v1` HTTP request carries the `X-Porthole: 1` header (WebSockets cannot, and rely on the
-exact `Origin`, 5.4). Request bodies are `application/json`, except uploads (`multipart/form-data`),
+exact `Origin`, 5.4; CORS preflight `OPTIONS` requests are exempt from the header but still need an
+allowed exact `Origin`). Request bodies are `application/json`, except uploads (`multipart/form-data`),
 voice (`audio/wav`), and `DELETE` (no body).
 - `GET /v1/machine`: this machine's name, hostd version, feature health.
 - `GET /v1/sessions`: the session tree (4.1), including per session `status`, `liveVoice`, `cwd`
@@ -413,7 +414,7 @@ voice (`audio/wav`), and `DELETE` (no body).
 
 ### 5.3 Reaching it
 - `tailscale serve` publishes `https://<machine>.ts.net/` → `http://127.0.0.1:8797` and
-  `https://<machine>.ts.net:8443/` → `http://127.0.0.1:8798`, in the background/persistent form so it
+  `https://<machine>.ts.net:8443/` → `http://127.0.0.1:8798` (or the Unix sockets of 5.4), in the background/persistent form so it
   survives restarts. If a command needs root or an operator setting, **stop and hand Ben the exact
   command** (never ask for his password).
 
@@ -431,7 +432,8 @@ voice (`audio/wav`), and `DELETE` (no body).
     this machine's control-room origin `https://<machine>.ts.net` (port 443) or one of its `peers`
     (4.15). Browsers cannot put custom headers on WebSockets, so the exact `Origin` is the check
     there. Preview pages (port 8443) and every other site fail it.
-  - CORS headers are sent only to those same exact origins.
+  - CORS headers are sent only to those same exact origins. Preflight `OPTIONS` requests are exempt
+    from `X-Porthole` but still need an allowed exact `Origin`.
 - **Local programs (ASSUMED, decision 9.4).** `tailscale serve` forwards to hostd on this computer,
   so hostd must tell a forwarded request from a local program that fakes the headers:
   - At P1 start the builder checks whether `tailscale serve` can forward to a Unix socket, and
@@ -443,7 +445,8 @@ voice (`audio/wav`), and `DELETE` (no body).
     any program already running as Ben could fake the headers, which is no worse than what such a
     program can already do (type into his sessions with `tmux send-keys`).
   - Local tools and tests use a token file (`$XDG_RUNTIME_DIR/porthole/local-token`, 0600), sent as
-    `X-Porthole-Local`; a request with that token skips the identity check.
+    `X-Porthole-Local`; a request with that token skips the identity check, but still needs
+    `X-Porthole` and, where 5.4 requires it, the exact `Origin`.
 - The omp extension's events socket is owner-only (0600 in a 0700 folder).
 - Each request's device and action is logged to `~/.local/state/porthole/access.log` (0600). Message
   text is never logged there.
@@ -475,7 +478,8 @@ in `omp-voice` (stays parked on `feat/live-inbox`); a Play Store listing; iPhone
   off the watch.
 - One real omp test run is allowed per omp extension: a throwaway
   `omp --no-extensions -e <extension.ts> --no-session --model haiku` session in a temp folder (this is
-  how live-inbox was proven, about 9 cents). P2.1 and P2.9 share one run.
+  how live-inbox was proven, about 9 cents). P2.1 and P2.9 share one run. P4.3 has one more
+  throwaway run (about 10 cents) for its scratch session.
 - Every test hostd runs with config overrides (4.1): a scratch tmux socket folder, a fake `herdr`,
   a fake `pactl`, fixture transcript folders, and a test port. A test hostd must never list Ben's
   real sessions. The one exception is P1.5: it runs against the installed hostd behind
@@ -513,7 +517,8 @@ log, systemd unit, tailscale serve, `live-inbox.ts` moved in and installed.
    (`tmux list-clients` before/after).
 5. Run against the installed hostd (port 8797), calling only `/v1/machine` and the auth checks (it
    never lists or touches sessions in this test). Requests through `tailscale serve` from an allowed
-   device get 200. A wrong-login or wrong-node identity gets 403. A non-GET with the wrong `Origin`,
+   device get 200. A wrong-login or wrong-node identity gets 403 (tested with injected headers: a
+   direct request in 127.0.0.1 mode, a unit test of `auth` in Unix-socket mode). A non-GET with the wrong `Origin`,
    an HTTP request without `X-Porthole`, and a WebSocket upgrade with a preview origin (port 8443) or
    a foreign origin each get 403. In Unix-socket mode only: a local connection not owned by root
    that sends identity headers without the local token gets 403. The local token works in both
