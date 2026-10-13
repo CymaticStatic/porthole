@@ -35,6 +35,11 @@ export class Auth {
     if (isApi && !upgrade && req.headers.get("x-porthole") !== "1") {
       return deny("missing the X-Porthole: 1 header");
     }
+    return this.identify(req);
+  }
+
+  /** Local token or Tailscale identity only: no Origin or X-Porthole rules (the preview proxy's pages cannot meet them). */
+  async identify(req: Request): Promise<Verdict> {
     const local = req.headers.get("x-porthole-local");
     if (local !== null) return sameSecret(local, this.localToken) ? { ok: true, device: "local", via: "local" } : deny("wrong local token");
     const login = req.headers.get("tailscale-user-login");

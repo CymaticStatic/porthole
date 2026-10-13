@@ -9,6 +9,7 @@ import { ensureLocalToken } from "./auth/localtoken";
 import type { HostdConfig } from "./config";
 import { SentLog } from "./deliver/sentlog";
 import { EventsHub } from "./events/hub";
+import { registerPid, unregisterPid } from "./pids";
 import { json, match, type Channel, type Ctx, type Feature, type FeatureFactory, type WsData } from "./router";
 import { Registry } from "./sessions/registry";
 
@@ -129,6 +130,8 @@ export async function createHostd(config: HostdConfig, factories: FeatureFactory
   });
 
   const port = server.port ?? config.apiPort;
+  // Set only by the register call below: a start() failure calls stop() before that, and must not touch another hostd's pid.
+  let registered = false;
   const hostd: Hostd = {
     port,
     url: "http://" + config.host + ":" + port,
@@ -141,6 +144,10 @@ export async function createHostd(config: HostdConfig, factories: FeatureFactory
       for (const f of features) await f.stop?.();
       while (registry.watching > 0) registry.stopWatching();
       await server.stop(true);
+      if (registered) {
+        registered = false;
+        unregisterPid();
+      }
     },
   };
   try {
@@ -149,5 +156,7 @@ export async function createHostd(config: HostdConfig, factories: FeatureFactory
     await hostd.stop();
     throw e;
   }
+  registerPid();
+  registered = true;
   return hostd;
 }

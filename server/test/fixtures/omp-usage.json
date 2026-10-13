@@ -1,0 +1,45 @@
+{
+  "generatedAt": 1791905649132,
+  "reports": [
+    {
+      "provider": "anthropic",
+      "fetchedAt": 1791905648983,
+      "limits": [
+        {
+          "id": "anthropic:5h",
+          "label": "Claude 5 Hour",
+          "scope": { "provider": "anthropic", "windowId": "5h", "shared": true },
+          "window": { "id": "5h", "label": "5 Hour", "durationMs": 18000000, "resetsAt": 1791912599819 },
+          "amount": { "used": 14, "limit": 100, "remaining": 86, "usedFraction": 0.14, "remainingFraction": 0.86, "unit": "percent" },
+          "status": "ok"
+        },
+        {
+          "id": "anthropic:7d",
+          "label": "Claude 7 Day",
+          "scope": { "provider": "anthropic", "windowId": "7d", "shared": true },
+          "window": { "id": "7d", "label": "7 Day", "durationMs": 604800000, "resetsAt": 1792227599819 },
+          "amount": { "used": 58, "limit": 100, "remaining": 42, "usedFraction": 0.58, "remainingFraction": 0.42000000000000004, "unit": "percent" },
+          "status": "ok"
+        },
+        {
+          "id": "anthropic:7d:fable",
+          "label": "Claude 7 Day (Fable)",
+          "scope": { "provider": "anthropic", "windowId": "7d", "tier": "fable" },
+          "window": { "id": "7d", "label": "7 Day", "durationMs": 604800000, "resetsAt": 1792227599819 },
+          "amount": { "used": 3, "limit": 100, "remaining": 97, "usedFraction": 0.03, "remainingFraction": 0.97, "unit": "percent" },
+          "status": "ok"
+        }
+      ],
+      "resetCredits": { "availableCount": 0, "redeemableCount": 0, "eligible": false, "reason": "not_at_wall", "credits": [] }
+    }
+  ],
+  "accountsWithoutUsage": [],
+  "disabledCredentials": [],
+  "capacity": {
+    "anthropic": [
+      { "window": "5h", "durationMs": 18000000, "accounts": 1, "usedAccounts": 0.14, "remainingAccounts": 0.86 },
+      { "window": "7d", "durationMs": 604800000, "accounts": 1, "usedAccounts": 0.58, "remainingAccounts": 0.42000000000000004 },
+      { "window": "7d", "durationMs": 604800000, "meter": "fable", "accounts": 1, "usedAccounts": 0.03, "remainingAccounts": 0.97 }
+    ]
+  }
+}

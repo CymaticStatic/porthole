@@ -7,7 +7,18 @@ import path from "node:path";
 import { asRecord, asString } from "./json";
 import { run } from "./exec";
 
-export interface Binaries { tmux: string; herdr: string; pactl: string; tailscale: string }
+export interface Binaries {
+  tmux: string;
+  herdr: string;
+  pactl: string;
+  tailscale: string;
+  git: string;
+  voxtype: string;
+  voxflow: string;
+  ss: string;
+  nvidiaSmi: string;
+  omp: string;
+}
 
 export interface HostdConfig {
   machineName: string;      // first DNS label, e.g. "bendesk-omarchy"
@@ -27,6 +38,11 @@ export interface HostdConfig {
   pendingAfterMs: number;   // SPEC 4.5: 30 s, then `pending`
   scanIntervalMs: number;
   singleForwardedFor: boolean; // false until Task 12 L3 proves `tailscale serve` writes one X-Forwarded-For entry
+  previewPort: number;      // 8798; 0 in tests
+  previewRanges: string;    // "3000-3999,4000-4999,5000-5999,8000-8999" or "none"
+  usageCollection: boolean; // true
+  voiceEnhance: boolean;    // false: voxflow enhance overwrites the clipboard
+  ompExtensionsDir: string; // "~/.omp/agent/extensions"
 }
 
 export type ConfigOverrides = Omit<Partial<HostdConfig>, "bin"> & { bin?: Partial<Binaries> };
@@ -45,7 +61,18 @@ export function defaultConfig(): HostdConfig {
     host: "127.0.0.1",
     apiPort: 8797,
     tmuxSocketDir: "/tmp/tmux-" + uid(),
-    bin: { tmux: "/usr/bin/tmux", herdr: "/usr/bin/herdr", pactl: "/usr/bin/pactl", tailscale: "/usr/bin/tailscale" },
+    bin: {
+      tmux: "/usr/bin/tmux",
+      herdr: "/usr/bin/herdr",
+      pactl: "/usr/bin/pactl",
+      tailscale: "/usr/bin/tailscale",
+      git: "/usr/bin/git",
+      voxtype: "/usr/bin/voxtype",
+      voxflow: path.join(home, ".local", "bin", "voxflow"),
+      ss: "/usr/bin/ss",
+      nvidiaSmi: "/usr/bin/nvidia-smi",
+      omp: path.join(home, ".local", "share", "mise", "installs", "github-can1357-oh-my-pi", "latest", "omp"),
+    },
     transcriptDirs: [path.join(home, ".omp", "agent", "sessions")],
     inboxRoot: path.join(runtime, "omp-inbox"),
     runtimeDir: path.join(runtime, "porthole"),
@@ -56,7 +83,27 @@ export function defaultConfig(): HostdConfig {
     pendingAfterMs: 30_000,
     scanIntervalMs: 2_000,
     singleForwardedFor: false,
+    previewPort: 8798,
+    previewRanges: "3000-3999,4000-4999,5000-5999,8000-8999",
+    usageCollection: true,
+    voiceEnhance: false,
+    ompExtensionsDir: path.join(home, ".omp", "agent", "extensions"),
   };
+}
+
+export function parseRanges(text: string): { ranges: [number, number][] } | { error: string } {
+  const t = text.trim();
+  if (t === "none") return { ranges: [] };
+  const ranges: [number, number][] = [];
+  for (const part of t.split(",").map((p) => p.trim())) {
+    const m = /^(\d{1,5})(?:-(\d{1,5}))?$/.exec(part);
+    if (!m) return { error: "port range \"" + part + "\" must look like 3000-3999 or 8080" };
+    const lo = Number(m[1]);
+    const hi = m[2] === undefined ? lo : Number(m[2]);
+    if (lo < 1 || hi > 65535 || lo > hi) return { error: "port range \"" + part + "\" must stay within 1-65535, low to high" };
+    ranges.push([lo, hi]);
+  }
+  return { ranges };
 }
 
 const ORIGIN = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)+$/;
@@ -75,6 +122,13 @@ export function validateConfig(c: HostdConfig): string[] {
   }
   if (!c.allowedLogin.includes("@")) problems.push("allowedLogin must be a Tailscale login");
   if (typeof c.singleForwardedFor !== "boolean") problems.push("singleForwardedFor must be true or false");
+  if (!Number.isInteger(c.previewPort) || c.previewPort < 0 || c.previewPort > 65535) problems.push("previewPort must be 0-65535");
+  else if (c.previewPort !== 0 && c.previewPort === c.apiPort) problems.push("previewPort must differ from apiPort");
+  const ranges = parseRanges(c.previewRanges);
+  if ("error" in ranges) problems.push("previewRanges: " + ranges.error);
+  if (typeof c.usageCollection !== "boolean") problems.push("usageCollection must be true or false");
+  if (typeof c.voiceEnhance !== "boolean") problems.push("voiceEnhance must be true or false");
+  if (!path.isAbsolute(c.ompExtensionsDir)) problems.push("ompExtensionsDir must be an absolute path");
   return problems;
 }
 

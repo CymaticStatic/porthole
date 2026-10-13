@@ -24,8 +24,8 @@ export const sessionsFeature: FeatureFactory = (d) => {
             if (ws.readyState === 1) ws.send(JSON.stringify({ type: "sessions", tree }));
           });
         },
-        message() {
-          // The events socket is server-to-client only in P1.
+        message(ws, data) {
+          d.hub.receive(ws, typeof data === "string" ? data : data.toString("utf8"));
         },
         close(ws) {
           d.hub.remove(ws);

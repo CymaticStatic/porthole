@@ -14,7 +14,7 @@ test("defaults match the spec", () => {
   const c = defaultConfig();
   expect(c.host).toBe("127.0.0.1");
   expect(c.apiPort).toBe(8797);
-  expect(c.bin).toEqual({ tmux: "/usr/bin/tmux", herdr: "/usr/bin/herdr", pactl: "/usr/bin/pactl", tailscale: "/usr/bin/tailscale" });
+  expect(c.bin).toMatchObject({ tmux: "/usr/bin/tmux", herdr: "/usr/bin/herdr", pactl: "/usr/bin/pactl", tailscale: "/usr/bin/tailscale" });
   expect(c.tmuxSocketDir).toMatch(/^\/tmp\/tmux-\d+$/);
   expect(c.allowedLogin).toBe("bengovernale@gmail.com");
   expect(c.allowedNodes).toEqual(["bencell", "benacer-omarchy", "bendesk-omarchy"]);
@@ -29,7 +29,7 @@ test("file values override defaults and test overrides win; bin merges per key",
   const c = loadConfig(file, { apiPort: 0, bin: { pactl: "/x/pactl" } });
   expect(c.machineName).toBe("bendesk-omarchy");
   expect(c.apiPort).toBe(0);
-  expect(c.bin).toEqual({ tmux: "/usr/bin/tmux", herdr: "/opt/herdr", pactl: "/x/pactl", tailscale: "/usr/bin/tailscale" });
+  expect(c.bin).toMatchObject({ tmux: "/usr/bin/tmux", herdr: "/opt/herdr", pactl: "/x/pactl", tailscale: "/usr/bin/tailscale" });
 });
 
 test("validation rejects relative binaries, origins with ports, and non-loopback hosts", () => {

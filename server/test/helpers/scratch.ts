@@ -80,7 +80,17 @@ export class Scratch {
     for (const name of ["herdr", "pactl", "tailscale"]) {
       this.writeExec(name, "#!/bin/sh\nFAKE_DIR='" + this.fakeBin + "' exec '" + process.execPath + "' '" + path.join(FAKES, name + ".ts") + "' \"$@\"\n");
     }
-    this.writeExec("omp", "#!/bin/sh\n# Fake omp: holds its transcript open like the real one, then idles.\nexec 3<\"$1\"\nwhile :; do sleep 1; done\n");
+    this.writeExec("omp", "#!/bin/sh\n# Fake omp: holds its transcript open like the real one; with --echo it also shows every key the pane receives (cat -v), then idles.\nexec 3<\"$1\"\nif [ \"$2\" = \"--echo\" ]; then cat -v; fi\nwhile :; do sleep 1; done\n");
+    // The P2 programs are not faked by default: a test that reaches one by mistake fails loudly instead of touching the real one.
+    for (const name of ["voxtype", "voxflow", "ss", "nvidiaSmi", "omp-cli"]) {
+      this.writeExec(name, "#!/bin/sh\necho \"" + name + ": not faked in this test\" >&2\nexit 1\n");
+    }
+  }
+
+  /** Writes an executable fake program into the scratch bin folder and returns its path. */
+  writeFake(name: string, body: string): string {
+    this.writeExec(name, body);
+    return path.join(this.fakeBin, name);
   }
 
   private writeExec(name: string, body: string): void {
@@ -103,8 +113,25 @@ export class Scratch {
       thalamusDir: this.thalamusDir,
       pendingAfterMs: 1500,
       scanIntervalMs: 200,
+      previewPort: 0,
+      previewRanges: "none",
+      usageCollection: true,
+      voiceEnhance: false,
+      ompExtensionsDir: path.join(this.root, "extensions"),
       ...o,
-      bin: { tmux: TMUX, herdr: path.join(this.fakeBin, "herdr"), pactl: path.join(this.fakeBin, "pactl"), tailscale: path.join(this.fakeBin, "tailscale"), ...o.bin },
+      bin: {
+        tmux: TMUX,
+        herdr: path.join(this.fakeBin, "herdr"),
+        pactl: path.join(this.fakeBin, "pactl"),
+        tailscale: path.join(this.fakeBin, "tailscale"),
+        git: "/usr/bin/git",
+        voxtype: path.join(this.fakeBin, "voxtype"),
+        voxflow: path.join(this.fakeBin, "voxflow"),
+        ss: path.join(this.fakeBin, "ss"),
+        nvidiaSmi: path.join(this.fakeBin, "nvidiaSmi"),
+        omp: path.join(this.fakeBin, "omp-cli"),
+        ...o.bin,
+      },
     });
   }
 
@@ -169,6 +196,11 @@ export class Scratch {
 
   ompCommand(transcriptPath: string): string {
     return "'" + path.join(this.fakeBin, "omp") + "' '" + transcriptPath + "'";
+  }
+
+  /** Like ompCommand, but the pane's shell stays named `omp` and a `cat -v` child echoes every key the pane receives. */
+  ompEchoCommand(transcriptPath: string): string {
+    return this.ompCommand(transcriptPath) + " --echo";
   }
 
   panePid(socket: string, target: string): number {

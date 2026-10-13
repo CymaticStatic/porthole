@@ -4,6 +4,7 @@
 import { hostname } from "node:os";
 import path from "node:path";
 import type { HostdConfig } from "../config";
+import { DirtyCache } from "../diff/git";
 import { sessionId, type Where } from "./ids";
 import { listAgents } from "./herdr";
 import { liveVoicePids } from "./livevoice";
@@ -25,6 +26,7 @@ export interface SessionInfo {
   attached: boolean;
   omp: { pid: number; transcript: string | null; inbox: boolean } | null;
   herdrStatus: string | null;
+  dirty: boolean | null; // git working tree has changes; null: no git repo or git failed
 }
 
 export interface Tree {
@@ -66,8 +68,11 @@ export class Registry {
   private watchers = 0;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private ticking = false;
+  private readonly dirtyCache: DirtyCache;
 
-  constructor(private readonly cfg: HostdConfig) {}
+  constructor(private readonly cfg: HostdConfig) {
+    this.dirtyCache = new DirtyCache(cfg);
+  }
 
   /** How many startWatching calls are not yet matched by stopWatching. */
   get watching(): number {
@@ -121,6 +126,7 @@ export class Registry {
           attached: p.attached,
           omp: ompPid === null ? null : { pid: ompPid, transcript, inbox: hasInbox(cfg.inboxRoot, ompPid) },
           herdrStatus: null,
+          dirty: null,
         });
       }
     }
@@ -145,9 +151,14 @@ export class Registry {
           attached: false,
           omp: null,
           herdrStatus: a.status,
+          dirty: null,
         });
       }
     }
+
+    const cwds = [...new Set(sessions.map((s) => s.cwd))];
+    const dirtyByCwd = new Map(await Promise.all(cwds.map(async (cwd) => [cwd, await this.dirtyCache.lookup(cwd)] as const)));
+    for (const s of sessions) s.dirty = dirtyByCwd.get(s.cwd) ?? null;
 
     sessions.sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
