@@ -4,6 +4,7 @@ import { json, type FeatureFactory } from "../router";
 
 export const sessionsFeature: FeatureFactory = (d) => {
   let unsubscribe: (() => void) | null = null;
+  let unsubscribePing: (() => void) | null = null;
   return {
     routes: [
       {
@@ -37,10 +38,19 @@ export const sessionsFeature: FeatureFactory = (d) => {
       unsubscribe = d.registry.onChange((tree) => {
         d.hub.broadcast({ type: "sessions", tree });
       });
+      // The page's heartbeat: {type:"ping"} gets {type:"pong"} back on the same socket, echoing a string or number id.
+      unsubscribePing = d.hub.onMessage((ws, m) => {
+        if (m.type !== "ping") return;
+        const pong: { type: "pong"; id?: string | number } = { type: "pong" };
+        if (typeof m.id === "string" || typeof m.id === "number") pong.id = m.id;
+        d.hub.sendTo(ws, pong);
+      });
     },
     stop() {
       unsubscribe?.();
       unsubscribe = null;
+      unsubscribePing?.();
+      unsubscribePing = null;
     },
   };
 };

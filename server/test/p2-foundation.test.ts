@@ -64,6 +64,29 @@ test("hub: onOpen on connect, ack-shaped messages reach onMessage, junk is ignor
   }
 });
 
+test("events socket: ping gets a pong on the same socket (id echoed when given); other frames get nothing", async () => {
+  const h = await startTestHostd(s, [sessionsFeature]);
+  try {
+    const a = await openWs(h, "/v1/events?device=a");
+    const b = await openWs(h, "/v1/events?device=b");
+    await a.next("sessions", 3000);
+    await b.next("sessions", 3000);
+    a.send(JSON.stringify({ type: "something-else" }));
+    a.send(JSON.stringify({ type: "ping" }));
+    expect(await a.next("pong", 3000)).toEqual({ type: "pong" });
+    a.send(JSON.stringify({ type: "ping", id: 7 }));
+    expect(await a.next("pong", 3000)).toEqual({ type: "pong", id: 7 });
+    a.send(JSON.stringify({ type: "ping", id: { bad: true } }));
+    expect(await a.next("pong", 3000)).toEqual({ type: "pong" });
+    expect(a.seen.filter((m) => m.type === "pong")).toHaveLength(3);
+    expect(b.seen.filter((m) => m.type === "pong")).toHaveLength(0);
+    a.close();
+    b.close();
+  } finally {
+    await h.stop();
+  }
+});
+
 test("identify(): local token or Tailscale identity, without the X-Porthole and Origin rules", async () => {
   const cfg = s.config();
   s.setWhois({ "100.64.0.5": { node: "bencell", login: cfg.allowedLogin } });
