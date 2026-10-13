@@ -27,8 +27,10 @@ test("context ring: hidden without a number, warns below 15 %", () => {
   expect(contextRing({ contextLeft: 0.15 })).toEqual({ percent: 15, warn: false });
   expect(contextRing({ contextLeft: 0.12 })).toEqual({ percent: 12, warn: true });
 });
-test("multi-select or several questions answer in the terminal (gap G2)", () => {
+test("one multi-select question gets ticks; several questions answer in the terminal", () => {
   expect(answerMode({ question: q({}) })).toBe("buttons");
-  expect(answerMode({ question: q({ multi: true }) })).toBe("terminal");
+  expect(answerMode({ question: q({ multi: true }) })).toBe("ticks");
   expect(answerMode({ question: q({ count: 2 }) })).toBe("terminal");
+  expect(answerMode({ question: q({ multi: true, count: 2 }) })).toBe("terminal");
+  expect(answerMode({ question: null })).toBe("buttons");
 });

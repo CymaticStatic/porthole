@@ -4,7 +4,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { Deliverer } from "../deliver/deliver";
-import { answerRefusal, answerSteps, chunks, parseAnswer } from "../events/answer";
+import { answerRefusal, answerSteps, chunks, multiAnswerGroups, parseAnswer } from "../events/answer";
 import { InboxStore, type Change } from "../events/inbox";
 import { NotifyQueue } from "../events/notify";
 import { EventsSocket, type OmpEvent } from "../events/socket";
@@ -12,6 +12,8 @@ import { asRecord } from "../json";
 import { json, type FeatureFactory } from "../router";
 
 const TICK_MS = 5000;
+/** Multi-select ticks redraw the dialog; the next key waits this long so it lands on the redrawn dialog. */
+const GROUP_PAUSE_MS = 150;
 
 /**
  * Ends every live omp item whose process is gone (the extension's session_end can be lost when omp exits fast).
@@ -84,13 +86,19 @@ export const inboxFeature: FeatureFactory = (d) => {
           if (reason !== null || item.question === null) return json({ status: "refused", reason }, 409);
           const qid = item.question.qid;
           answered.add(qid);
-          const parts = chunks(answerSteps(item.question.options.length, a));
-          for (let i = 0; i < parts.length; i++) {
-            const r = await deliverer.keys(item.sessionId, parts[i]);
-            if (r.status === "sent") continue;
-            // A refusal on the first chunk happens before any key is sent; anything later may have changed the dialog.
-            if (r.status === "refused" && i === 0) answered.delete(qid);
-            return json(r, r.status === "refused" ? 409 : 502);
+          const n = item.question.options.length;
+          // One list of key parts per dialog redraw: a plain answer is one group, a multi-select answer is one per tick plus Done.
+          const groups = item.question.multi && "optionIndexes" in a ? multiAnswerGroups(n, a.optionIndexes) : [answerSteps(n, a)];
+          let first = true;
+          for (const group of groups) {
+            for (const part of chunks(group)) {
+              const r = await deliverer.keys(item.sessionId, part);
+              if (r.status === "sent") { first = false; continue; }
+              // A refusal on the first part happens before any key is sent; anything later may have changed the dialog.
+              if (r.status === "refused" && first) answered.delete(qid);
+              return json(r, r.status === "refused" ? 409 : 502);
+            }
+            if (group !== groups[groups.length - 1]) await Bun.sleep(GROUP_PAUSE_MS);
           }
           return json({ status: "sent", reason: "" });
         },

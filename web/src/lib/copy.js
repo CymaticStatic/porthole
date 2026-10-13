@@ -218,6 +218,8 @@ export const copy = deepFreeze({
   otherAnswer: "Other answer",
   answerPlaceholder: "Type your answer",
   sendAnswer: "Send answer",
+  tickHint: "Tick every one that applies, then press Submit.",
+  submitAnswer: "Submit",
   openTerminal: "Open terminal",
   answerFailed: "Couldn't send your answer. Check the connection and try again.",
   stopFailed: "Couldn't stop it. Try again, or stop it at the desk.",

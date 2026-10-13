@@ -65,12 +65,14 @@ export function groupInbox(itemsByMachine) {
 }
 
 /**
- * P2 answers one option for one question (gap G2), so multi-select or several questions are answered in the terminal.
- * @param {{question: InboxQuestion | null}} item @returns {"buttons" | "terminal"}
+ * How a question is answered on the page: one tap per option ("buttons"), ticks plus Submit for one multi-select question
+ * ("ticks"), or in the terminal when several questions come at once (hostd refuses those; SPEC 4.6).
+ * @param {{question: InboxQuestion | null}} item @returns {"buttons" | "ticks" | "terminal"}
  */
 export function answerMode(item) {
   const q = item.question;
-  return q !== null && (q.multi || q.count > 1) ? "terminal" : "buttons";
+  if (q !== null && q.count > 1) return "terminal";
+  return q !== null && q.multi ? "ticks" : "buttons";
 }
 
 /** Context-left ring (SPEC 4.6): none without a number, warning below 15 %. @param {{contextLeft: number | null}} item */

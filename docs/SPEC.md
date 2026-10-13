@@ -202,7 +202,10 @@ drawer on the phone. Its groups, top to bottom:
   the question open (by its question id) and has not reported it closed. Otherwise the item becomes
   read-only with "Answer this in the terminal". Live-voice panes: see 4.3.
 - **Multi-select questions**: in the app, options are ticked and then sent with Submit. On
-  notifications and the watch they show only Open.
+  notifications and the watch they show only Open. hostd types, for each ticked option (lowest first), Up to the top, Down
+  to its row and Space, then Enter: omp's dialog (seen live 2026-10-13) lists `[ ]` option rows then `Other (type your own)`,
+  its footer reads "Space toggle · Enter submit", and Up stops at the first row; the effect of Space and of Enter with
+  ticks is from that footer and still **unverified in action** (the one live run pressed Enter on nothing and got Cancelled).
 - **Context left**: when the transcript reports it, each item shows a ring for the context window
   that is left, warning below 15%.
 

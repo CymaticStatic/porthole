@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { inboxDir } from "../src/deliver/inbox";
-import { answerSteps, chunks, parseAnswer } from "../src/events/answer";
+import { answerSteps, chunks, multiAnswerGroups, parseAnswer } from "../src/events/answer";
 import { InboxStore } from "../src/events/inbox";
 import { endDeadSessions, inboxFeature } from "../src/features/inbox";
 import { sendFeature } from "../src/features/send";
@@ -63,8 +63,20 @@ test("key steps: to the top, down to the row, Enter; typed text goes through the
   expect(answerSteps(3, { optionIndexes: [1] })).toEqual([...Array(5).fill({ key: "Up" }), { key: "Down" }, { key: "Enter" }]);
   expect(answerSteps(2, { text: "teal" })).toEqual([...Array(4).fill({ key: "Up" }), { key: "Down" }, { key: "Down" }, { key: "Enter" }, { text: "teal" }, { key: "Enter" }]);
   expect(chunks(answerSteps(20, { optionIndexes: [19] })).map((c) => c.length)).toEqual([32, 10]);
-  expect(parseAnswer({ optionIndexes: [0, 1] })).toHaveProperty("error");
-  expect(parseAnswer({})).toHaveProperty("error");
+  expect(parseAnswer({ optionIndexes: [2, 0] })).toEqual({ optionIndexes: [2, 0] });
+  for (const bad of [{}, { optionIndexes: [] }, { optionIndexes: [1, 1] }, { optionIndexes: [-1] }, { optionIndexes: [1.5] }, { optionIndexes: ["1"] }, { optionIndexes: Array.from({ length: 21 }, (_, i) => i) }, { optionIndexes: [0], text: "x" }]) {
+    expect(parseAnswer(bad)).toHaveProperty("error");
+  }
+});
+
+test("multi-select key groups: one tick per group (up to the top, down to the row, Space), then Enter", () => {
+  const up3 = Array(5).fill({ key: "Up" });
+  expect(multiAnswerGroups(3, [2, 0])).toEqual([
+    [...up3, { key: "Space" }],
+    [...up3, { key: "Down" }, { key: "Down" }, { key: "Space" }],
+    [{ key: "Enter" }],
+  ]);
+  expect(multiAnswerGroups(3, [1])).toEqual([[...up3, { key: "Down" }, { key: "Space" }], [{ key: "Enter" }]]);
 });
 
 test("P2.1/P2.3: an open question becomes a needs-you item with exactly one notify; option 2 presses the right keys; closed is read-only", async () => {
@@ -101,12 +113,39 @@ test("typed answer goes through the Other row; multi-select, unknown omp and bad
 
   await ask(p.pid, "q3", { multi: true });
   const multi = await itemFor("q3");
-  expect((await (await post(h, "/v1/inbox/" + multi.id + "/answer", { optionIndexes: [0] })).json()).reason).toBe("Answer this in the terminal");
+  expect((await (await post(h, "/v1/inbox/" + multi.id + "/answer", { text: "teal" })).json()).reason).toBe("Answer this in the terminal");
+  expect((await (await post(h, "/v1/inbox/" + multi.id + "/answer", { optionIndexes: [0, 3] })).json()).reason).toBe("no such option");
+
+  await ask(p.pid, "q3b");
+  const plain = await itemFor("q3b");
+  const pick = await post(h, "/v1/inbox/" + plain.id + "/answer", { optionIndexes: [0, 1] });
+  expect([pick.status, (await pick.json()).reason]).toEqual([409, "pick one option"]);
+  expect((await post(h, "/v1/inbox/" + plain.id + "/answer", { optionIndexes: [1] })).status).toBe(200);
 
   await ask(4_000_000, "q4");
   const stranger = await itemFor("q4");
   expect(stranger.sessionId).toBe("omp:4000000");
   expect((await (await post(h, "/v1/inbox/" + stranger.id + "/answer", { optionIndexes: [0] })).json()).reason).toBe("Answer this in the terminal");
+});
+
+test("multi-select answer: ticks in row order, then Enter; the claim is used up; several questions stay read-only", async () => {
+  const p = await echoPane("multi");
+  await ask(p.pid, "qm", { multi: true });
+  const item = await itemFor("qm");
+  const r = await post(h, "/v1/inbox/" + item.id + "/answer", { optionIndexes: [2, 0] });
+  expect([r.status, (await r.json()).status]).toEqual([200, "sent"]);
+  // cat -v echoes each key: tick row 0 (Up x5, Space), tick row 2 (Up x5, Down x2, Space), then Enter flushes the line.
+  await waitFor(() => screen(p, "multi").includes(UP.repeat(5) + " " + UP.repeat(5) + DOWN.repeat(2) + " "), 5000);
+  const again = await post(h, "/v1/inbox/" + item.id + "/answer", { optionIndexes: [1] });
+  expect([again.status, (await again.json()).reason]).toEqual([409, "Answer this in the terminal"]);
+
+  await emit({ pid: p.pid, type: "question_open", qid: "qm2", questions: [
+    { id: "a", question: "A?", options: ["x", "y"], multi: true },
+    { id: "b", question: "B?", options: ["x", "y"], multi: true },
+  ] });
+  const several = await itemFor("qm2");
+  const refused = await post(h, "/v1/inbox/" + several.id + "/answer", { optionIndexes: [0, 1] });
+  expect([refused.status, (await refused.json()).reason]).toEqual([409, "Answer this in the terminal"]);
 });
 
 test("P2.10: live voice refuses option answers, typed answers and Stop with a plain reason", async () => {
@@ -215,7 +254,7 @@ test("an archived item is read-only even while its question is still open", asyn
   await Bun.sleep(200);
   expect(screen(p, "archived")).not.toContain(UP);
   expect((await post(h, "/v1/inbox/nope/answer", { optionIndexes: [0] })).status).toBe(404);
-  expect((await post(h, "/v1/inbox/" + item.id + "/answer", { optionIndexes: [0, 1] })).status).toBe(400);
+  expect((await post(h, "/v1/inbox/" + item.id + "/answer", { optionIndexes: [0, 0] })).status).toBe(400);
 });
 
 test("Stop sends Esc through the keys route when live voice is off", async () => {

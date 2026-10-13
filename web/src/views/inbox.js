@@ -1,7 +1,7 @@
 // Inbox screen (SPEC 4.6): Needs you / Working / Done, each grouped by project folder and then by machine.
 // Every card can be stopped, archived (button, or a swipe to the left) and opened; a needs-you card with one
-// single-choice question also has its option buttons and a typed answer. Multi-select questions and several
-// questions are answered in the terminal (hostd refuses them anyway, see inboxmodel.answerMode).
+// single-choice question also has its option buttons and a typed answer, and one multi-select question has tick boxes
+// and a Submit button. Several questions at once are answered in the terminal (hostd refuses them, see inboxmodel.answerMode).
 //
 // Rendering never throws away what Ben is doing: cards are kept between updates and only the ones whose data
 // changed are replaced, typed answers live outside the DOM, and focus is put back after a replacement.
@@ -75,6 +75,8 @@ export function mount(root, ctx) {
   const ui = new Map();
   /** Typed answers, by card: kept here so a redraw never eats a word. @type {Map<string, string>} */
   const typed = new Map();
+  /** Ticked options of multi-select cards, by card: kept here for the same reason. @type {Map<string, Set<number>>} */
+  const ticked = new Map();
   /** Cards archived on this device that hostd's next push has not caught up with yet. @type {Set<string>} */
   const hidden = new Set();
   /** @type {Map<string, {sig: string, el: HTMLElement}>} */
@@ -114,6 +116,7 @@ export function mount(root, ctx) {
     const r = m ? await m.api.post(`/v1/inbox/${encodeURIComponent(item.id)}/answer`, body) : null;
     if (r !== null && r.ok && asObject(r.data).status === "sent") {
       typed.delete(key);
+      ticked.delete(key);
       patch(key, { busy: false, answered: label });
     } else {
       patch(key, { busy: false, notice: copy.answerFailed, detail: detailOf(r) });
@@ -227,6 +230,34 @@ export function mount(root, ctx) {
     } else if (askOpen && q !== null) {
       if (mode === "terminal") {
         ask.push(h("p", { class: "inbox-note", "data-test": "terminal-note" }, copy.answerInTerminal));
+      } else if (mode === "ticks") {
+        /** @type {Set<number>} */
+        const set = ticked.get(key) ?? new Set();
+        ticked.set(key, set);
+        const submit = /** @type {HTMLButtonElement} */ (h("button", {
+          type: "button", class: "inbox-button is-primary", "data-action": "submit-ticks", "data-focus": "submit", disabled: st.busy || set.size === 0,
+          on: {
+            click: () => {
+              const picked = [...set].sort((a, b) => a - b);
+              if (picked.length > 0) void answer(item, { optionIndexes: picked }, picked.map((i) => q.options[i]).join(", "));
+            },
+          },
+        }, copy.submitAnswer));
+        ask.push(h("p", { class: "inbox-label" }, copy.tickHint));
+        ask.push(h("div", { class: "inbox-ticks", role: "group", "aria-label": q.text }, q.options.map((option, i) => {
+          const box = /** @type {HTMLInputElement} */ (h("input", {
+            type: "checkbox", class: "inbox-tickbox", "data-tick": i, "data-focus": `tick-${i}`, checked: set.has(i), disabled: st.busy,
+            on: {
+              change: () => {
+                if (box.checked) set.add(i);
+                else set.delete(i);
+                submit.disabled = st.busy || set.size === 0;
+              },
+            },
+          }));
+          return h("label", { class: "inbox-tick" }, box, h("span", {}, option));
+        })));
+        ask.push(submit);
       } else {
         if (q.options.length > 0) {
           ask.push(h("div", { class: "inbox-options" }, q.options.map((option, i) => h("button", {
@@ -341,6 +372,7 @@ export function mount(root, ctx) {
     const listed = new Set([...grouped.needsYou, ...grouped.working, ...grouped.done].flatMap((g) => g.machines.flatMap((m) => m.items.map(keyOf))));
     for (const k of [...ui.keys()]) if (!listed.has(k)) ui.delete(k);
     for (const k of [...typed.keys()]) if (!listed.has(k)) typed.delete(k);
+    for (const k of [...ticked.keys()]) if (!listed.has(k)) ticked.delete(k);
     for (const k of [...hidden]) if (!listed.has(k)) hidden.delete(k);
     for (const k of [...cache.keys()]) if (!live.has(k)) cache.delete(k);
 

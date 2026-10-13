@@ -201,6 +201,31 @@
 .inbox-button.is-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
 .inbox-button.is-primary:hover, .inbox-button.is-primary:active { background: color-mix(in oklch, var(--accent) 85%, black); }
 
+.inbox-ticks { display: grid; gap: var(--sp-2); }
+
+.inbox-tick {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-block-size: var(--tap);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-3);
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.inbox-tick:hover { background: var(--surface-2); }
+
+.inbox-tickbox { flex: none; inline-size: 1.5rem; block-size: 1.5rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
+
+.inbox-tickbox:disabled { cursor: default; }
+
 .inbox-button.is-danger { color: var(--danger); border-color: var(--danger); }
 
 .inbox-other { display: grid; gap: var(--sp-1); min-inline-size: 0; }

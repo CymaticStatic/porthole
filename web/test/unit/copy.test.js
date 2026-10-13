@@ -15,6 +15,7 @@ test("the voice-table strings are exact", () => {
   expect(copy.liveVoiceKeys).toBe("Live voice is on at the desk: keys go to the live panel (Space mutes, Esc ends it)");
   expect(copy.noRepo).toBe("No git repo here");
   expect(copy.answerInTerminal).toBe("Answer this in the terminal");
+  expect([copy.tickHint, copy.submitAnswer]).toEqual(["Tick every one that applies, then press Submit.", "Submit"]);
   expect(copy.inboxEmpty).toBe("Nothing needs you. New questions from your agents show up here.");
   expect(copy.draftSaveFailed).toBe("This device couldn't save your draft. Copy it somewhere safe before leaving.");
 });
