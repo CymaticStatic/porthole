@@ -92,7 +92,7 @@ test("a started main.ts uses only its scratch config, lists only scratch session
 
 test("unit file, install script and serve script follow SPEC 7", () => {
   const unit = readFileSync(path.join(REPO, "deploy", "porthole.service"), "utf8");
-  for (const line of ["UMask=0077", "Restart=on-failure", "RestartSec=5", "WantedBy=default.target", "ExecStart=/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun run %h/.local/share/porthole/hostd/current/server/src/main.ts"]) {
+  for (const line of ["UMask=0077", "Restart=on-failure", "RestartSec=5", "StartLimitIntervalSec=60", "StartLimitBurst=5", "WantedBy=default.target", "ExecStart=/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun run %h/.local/share/porthole/hostd/current/server/src/main.ts"]) {
     expect(unit).toContain(line);
   }
   const install = readFileSync(path.join(REPO, "deploy", "install.sh"), "utf8");
@@ -102,6 +102,11 @@ test("unit file, install script and serve script follow SPEC 7", () => {
     expect(src).not.toMatch(/tailscaled/);
   }
   expect(install).toContain("systemctl --user enable --now porthole.service");
+  // A service that was already running is restarted after `current` is re-pointed.
+  expect(install).toContain("systemctl --user restart porthole.service");
+  expect(install.indexOf("ln -sfn")).toBeLessThan(install.indexOf("systemctl --user restart porthole.service"));
+  // serve.ts gives every tailscale call an explicit timeout.
+  expect(serve).toContain("timeoutMs: TAILSCALE_TIMEOUT_MS");
   // serve.ts only adds entries (SPEC 7): it never calls `tailscale serve reset` or `... off`.
   expect(serve).not.toMatch(/\breset\b/);
   expect(serve).not.toMatch(/\boff\b/);

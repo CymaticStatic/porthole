@@ -19,6 +19,9 @@ const TARGETS: ReadonlyArray<readonly [port: string, target: string]> = [
   ["8443", "http://127.0.0.1:8798"],
 ];
 
+/** Every tailscale call here runs with stdin ignored (`run` never gives the child a terminal) and is killed after this long. */
+const TAILSCALE_TIMEOUT_MS = 30_000;
+
 export function planServe(status: unknown, host: string): { add: string[][]; refuse: string } {
   const st = asRecord(status);
   const tcp = asRecord(st.TCP);
@@ -40,7 +43,7 @@ export function planServe(status: unknown, host: string): { add: string[][]; ref
 }
 
 async function statusJson(bin: string): Promise<unknown> {
-  const r = await run([bin, "serve", "status", "--json"]);
+  const r = await run([bin, "serve", "status", "--json"], { timeoutMs: TAILSCALE_TIMEOUT_MS });
   if (r.code !== 0) throw new Error("tailscale serve status failed: " + r.stderr.trim());
   return JSON.parse(r.stdout);
 }
@@ -57,7 +60,7 @@ if (import.meta.main) {
       process.exit(1);
     }
     for (const argv of plan.add) {
-      const r = await run([bin, ...argv]);
+      const r = await run([bin, ...argv], { timeoutMs: TAILSCALE_TIMEOUT_MS });
       console.log("tailscale " + argv.join(" ") + " -> exit " + r.code + (r.stderr.trim() ? ": " + r.stderr.trim() : ""));
       if (r.code !== 0) process.exit(1);
     }

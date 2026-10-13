@@ -49,7 +49,10 @@ function upgradeStatus(base: string, headers: Record<string, string>): Promise<n
     sock.on("data", (d: Buffer) => {
       buf += d.toString("latin1");
       const m = /^HTTP\/1\.1 (\d{3})/.exec(buf);
-      if (m) done(Number(m[1]));
+      if (!m) return;
+      // 101 = the server ACCEPTED the upgrade (a FAIL for every check here): close at once and read no frames.
+      if (m[1] === "101") sock.removeAllListeners("data");
+      done(Number(m[1]));
     });
     sock.on("error", () => done(0));
   });

@@ -1,6 +1,8 @@
 [Unit]
 Description=Porthole hostd (phone access to this machine's agent sessions)
 After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple

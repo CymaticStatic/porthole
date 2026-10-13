@@ -51,7 +51,12 @@ async function serve(): Promise<void> {
   const stop = async (): Promise<void> => {
     if (stopping) return;
     stopping = true;
-    await h.stop();
+    try {
+      await h.stop();
+    } catch (e) {
+      console.error("hostd stop failed: " + (e instanceof Error ? e.message : String(e)));
+      process.exit(1);
+    }
     process.exit(0);
   };
   process.on("SIGTERM", () => void stop());
