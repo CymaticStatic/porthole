@@ -1,0 +1,83 @@
+/* Design tokens. Values are OKLCH. Light first, then dark (system setting). Contrast is proven by web/test/unit/contrast.test.ts. */
+:root {
+  color-scheme: light dark;
+
+  --bg: oklch(98.5% 0.003 250);
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(95.5% 0.006 250);
+  --border: oklch(88% 0.008 250);
+  --text: oklch(23% 0.015 250);
+  --text-2: oklch(45% 0.015 250);
+  --accent: oklch(50% 0.150 255);
+  --on-accent: oklch(99% 0 0);
+  --mine: oklch(93% 0.035 255);
+  --needs: oklch(60% 0.160 60);
+  --needs-text: oklch(45% 0.120 55);
+  --working: oklch(52% 0.140 255);
+  --done: oklch(50% 0.120 150);
+  --idle: oklch(60% 0.010 250);
+  --live: oklch(50% 0.170 300);
+  --danger: oklch(50% 0.180 25);
+  --scrim: oklch(20% 0.01 250 / 0.45);
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "DejaVu Sans Mono", "Noto Sans Mono", monospace;
+
+  --fs-scale: 1;
+  --fs-1: 0.75rem;
+  --fs-2: 0.875rem;
+  --fs-3: 1rem;
+  --fs-4: 1.2rem;
+  --fs-5: 1.44rem;
+  --lh-body: 1.5;
+
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+  --sp-7: 3rem;
+
+  --r-1: 6px;
+  --r-2: 14px;
+  --r-pill: 999px;
+  --shadow: 0 8px 24px oklch(0% 0 0 / 0.18);
+
+  --dur-1: 100ms;
+  --dur-2: 150ms;
+  --dur-3: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+
+  --tap: 48px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(17% 0.010 250);
+    --surface: oklch(21% 0.012 250);
+    --surface-2: oklch(25.5% 0.012 250);
+    --border: oklch(34% 0.012 250);
+    --text: oklch(93% 0.008 250);
+    --text-2: oklch(73% 0.010 250);
+    --accent: oklch(74% 0.120 255);
+    --on-accent: oklch(17% 0.010 250);
+    --mine: oklch(30% 0.045 255);
+    --needs: oklch(80% 0.140 70);
+    --needs-text: oklch(84% 0.120 75);
+    --working: oklch(74% 0.120 255);
+    --done: oklch(76% 0.120 150);
+    --idle: oklch(60% 0.010 250);
+    --live: oklch(74% 0.140 300);
+    --danger: oklch(72% 0.160 25);
+    --scrim: oklch(5% 0 0 / 0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+  }
+}
