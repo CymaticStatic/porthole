@@ -265,3 +265,12 @@ New APKs (nothing installed from here):
 72dfa104e098601bebbe70b1562a29f8f8f2520e5125de27286438877e64d03c  android/app/build/outputs/apk/debug/app-debug.apk  (34820362 bytes)
 2f064286f57b9ae37fb07ddfe32f38af8a5469d806ab96d2dcf2ccd532c304b8  android/wear/build/outputs/apk/debug/wear-debug.apk  (38186476 bytes)
 ```
+
+## 10. E2 on the Pixel 7 Pro (2026-10-13, Ben with the phone; agent read-only over adb)
+
+Install 12:40 and update 13:13 (`adb -s 2B151FDH300C01 install -r`, app sha256 `72dfa104…`). Notifications allowed; battery Unrestricted (`dumpsys deviceidle whitelist` shows `user,ai.porthole.app,10345`); Test connection showed "Connected to bendesk-omarchy. This phone shows up there as bencell" (`bencell` is the phone's Tailscale name; Ben chose to keep it).
+
+Scratch session for P4.3: `tmux -L porthole-test` session `scratch-p43`, omp pid 964286, `--no-extensions -e porthole-events.ts -e live-inbox.ts --model haiku`; hostd lists it as `tmux:porthole-test:scratch-p43:1.1` with no socket override (hostd already scans every socket in `/tmp/tmux-<uid>`).
+
+- **(a) pass, 14:02.** App swiped away, screen off. Question "Porthole test 1: did the phone buzz?" (asked 14:02:15) arrived on the phone and, bridged by Wear OS, on the Galaxy Watch6 (Ben).
+- **(b) pass, 14:02:37, answered from the watch.** Ben tapped Yes on the bridged notification on the watch (the watch app is not installed yet, so this was the phone's own notification action). The scratch pane showed `(o) Yes` at 14:02:37 and the phone notification became "Sent: Yes" with only Open. This also covers P5.2 (e): the phone's notification appears on the watch with its answer buttons, and they work.
