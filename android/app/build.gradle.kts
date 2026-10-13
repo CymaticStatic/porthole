@@ -26,6 +26,7 @@ dependencies {
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.core.ktx)
     implementation(libs.activity.compose)
+    implementation(libs.fragment) // play-services-base drags in fragment 1.1.0; registerForActivityResult needs >= 1.3.0 (lint InvalidFragmentVersionForActivityResult)
     implementation(libs.lifecycle.service)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.webkit)
@@ -40,4 +41,7 @@ dependencies {
     testImplementation(libs.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.junit)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

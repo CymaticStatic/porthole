@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="web_update_webview">Update Android System WebView</string>
+    <string name="web_update_webview_detail">This version of Android System WebView is too old for Porthole\'s voice, camera and file buttons. Update it in Google Play.</string>
+    <string name="web_no_machines">No computers yet. Add one to open Porthole.</string>
+    <string name="web_open_machines">Add a computer</string>
+</resources>

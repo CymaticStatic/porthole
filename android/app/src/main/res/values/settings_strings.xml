@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Your computers (MachinesActivity) -->
+    <string name="settings_machines_title">Your computers</string>
+    <string name="settings_machines_intro">Porthole talks to these computers over your private Tailscale network.</string>
+    <string name="settings_machines_empty">No computers yet. Add one below.</string>
+    <string name="settings_machine_rename">Rename</string>
+    <string name="settings_machine_remove">Remove</string>
+    <string name="settings_machine_test">Test connection</string>
+    <string name="settings_machine_testing">Testing…</string>
+    <string name="settings_test_ok">Connected to %1$s. This phone shows up there as %2$s.</string>
+    <string name="settings_test_ok_no_device">Connected to %1$s.</string>
+    <string name="settings_test_failed">Could not connect: %1$s</string>
+    <string name="settings_test_failed_no_reason">no answer</string>
+    <string name="settings_rename_title">Rename %1$s</string>
+    <string name="settings_rename_save">Save</string>
+    <string name="settings_remove_title">Remove %1$s?</string>
+    <string name="settings_remove_body">Porthole will stop listening to this computer. You can add it again later.</string>
+    <string name="settings_cancel">Cancel</string>
+
+    <!-- Add a computer (MachineForm) -->
+    <string name="settings_form_title">Add a computer</string>
+    <string name="settings_form_name_label">Name</string>
+    <string name="settings_form_origin_label">Address</string>
+    <string name="settings_form_origin_hint">https://name.tailnet.ts.net</string>
+    <string name="settings_form_add">Add</string>
+    <string name="settings_origin_error">Use the https address ending in .ts.net</string>
+
+    <!-- Keep Porthole running (BatteryGuideActivity) -->
+    <string name="settings_battery_title">Keep Porthole running</string>
+    <string name="settings_battery_intro">To tell you when a session needs you, Porthole stays connected to your computers in the background. Android sometimes stops apps it thinks are idle, and then your alerts arrive late or not at all.</string>
+    <string name="settings_battery_how">Tap the button below and choose Allow. Porthole uses very little battery while it waits.</string>
+    <string name="settings_battery_status_ok">Android is not limiting Porthole. You are all set.</string>
+    <string name="settings_battery_status_limited">Android may stop Porthole when the screen is off.</string>
+    <string name="settings_battery_button">Allow Porthole to run in the background</string>
+</resources>
