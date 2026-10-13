@@ -10,12 +10,12 @@ instructions: |
   - Flag hostd binding anything other than 127.0.0.1 or owner-only Unix sockets (ports 8797, 8798),
     or any /v1 path or WebSocket that skips the checks in docs/SPEC.md section 5.4 (Tailscale
     identity + node allowlist, X-Porthole header on HTTP, exact Origin for non-GET and WS upgrades),
-    beyond the documented 127.0.0.1 limit in section 9.4.
+    beyond the documented 127.0.0.1 limit (decision 10.13).
   - Flag keys, Stop or option answers that can reach an omp pane in live voice (SPEC 4.3), and preview
     proxying of a port that was not discovered or is on the always-refused list (SPEC 4.10).
   - Flag a JS bridge exposed to any origin other than a configured machine's https://<name>.ts.net,
     upload paths escaping ~/.local/state/porthole/uploads/, sockets not 0600 in a 0700 folder, and
-    push endpoints not on the configured private ntfy.
+    notifications sent anywhere but the device's own /v1/events socket, or shown twice after an ack.
   - Flag starting omp live voice, OpenAI realtime, adb screenshot loops, installs on the phone, watch
     or laptop without Ben's OK in that conversation, restarting tailscaled, or installing omp
     extensions globally before their throwaway-omp test passed.

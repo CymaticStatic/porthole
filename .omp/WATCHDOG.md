@@ -23,7 +23,7 @@
   not separate them. Only the exact-Origin check and the X-Porthole header do (SPEC 5.4).
 - `tailscale serve` forwards locally, so identity headers can be faked by local programs. In Unix-socket
   mode trust them only from a connection owned by root (`tailscaled`, checked with SO_PEERCRED); a
-  0600 socket alone is not enough. In 127.0.0.1 mode the limit is documented (SPEC 5.4, 9.4). WebSockets cannot carry X-Porthole: check exact Origin.
+  0600 socket alone is not enough. In 127.0.0.1 mode the limit is documented (SPEC 5.4, decision 10.13). WebSockets cannot carry X-Porthole: check exact Origin.
 - `git status` takes index.lock and repo config can run programs: always use GIT_OPTIONAL_LOCKS=0 and
   the flags in SPEC 4.9.
 - `voxtype transcribe` may load a second Whisper model onto the graphics card and crash voxtype's

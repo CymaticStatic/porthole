@@ -1,12 +1,9 @@
 # Porthole: feature spec (v2, Moshi parity)
 
-Status: **v2 draft for Ben's review, 2026-10-13.** Supersedes v1 (2026-10-12, last v1 commit `21b54fe`).
+Status: **v2, approved for build by Ben on 2026-10-13** ("approve"). Supersedes v1 (2026-10-12, last v1 commit `21b54fe`).
 v1's design was approved by Ben on 2026-10-12. v2 widens the scope to the useful features of the
 commercial app Moshi, as Ben asked on 2026-10-12 ("reverse engineer the app Moshi ... the backend is
-priority"). Ben chose every scope item in section 10 on 2026-10-12 and 2026-10-13, except three marked
-**ASSUMED** (section 9: push route, both machines in one view, local programs), which are built as
-written unless he changes them. Nothing gets built
-from v2 until he approves this written spec.
+priority"). Ben chose every scope item in section 10 on 2026-10-12 and 2026-10-13.
 
 **Clean room.** Moshi's features were studied only from its public docs (getmoshi.app/docs, read
 2026-10-12). Porthole copies no Moshi code, text or assets. Research notes:
@@ -218,21 +215,20 @@ drawer on the phone. Its groups, top to bottom:
 - Notifications from both computers reach the phone. Android shows phone notifications on the
   Galaxy Watch6, including action buttons [INFERENCE: standard Wear OS notification bridging,
   confirmed on Ben's watch in phase P5].
-- **Delivery route: ntfy + UnifiedPush** (**ASSUMED**, decision 10.3; Ben asked about KDE Connect
-  and has not yet confirmed this choice). hostd posts each notification to Ben's private ntfy server
-  (`ntfy-private.service`, already running on the desktop on port 8796, bound to its Tailscale
-  address). The ntfy Android app (`io.heckel.ntfy`, already installed) acts as the UnifiedPush
-  distributor: it holds the one always-open connection and wakes the Porthole app. The Porthole app
-  then builds the notification itself, with its buttons. Setup:
-  - The Porthole app registers with UnifiedPush and gives each machine's hostd its endpoint
-    (`POST /v1/push/register`). hostd accepts only endpoints on the private ntfy server named in its
-    config (exact scheme, host and port); any other URL is refused, so hostd can never be made to
-    post to an outside address.
-  - Ben points the ntfy app's UnifiedPush server at his private ntfy once, in ntfy's settings.
-  - The laptop's hostd posts to the same endpoint, so its notifications also go through the
-    desktop's ntfy. If the desktop is off, the laptop's hostd keeps up to 100 unsent notifications and
-    retries every 60 s for up to 24 h, then drops the oldest. The inbox still shows them live.
-  - No Google services, no Firebase, no third-party server.
+- **Delivery route: Porthole's own connection** (decision 10.3, Ben 2026-10-13). No ntfy, no
+  KDE Connect, no Google:
+  - The Android app runs a foreground service (an Android background task that shows a small
+    permanent "Porthole is connected" notification). It keeps one `/v1/events` WebSocket open to each
+    machine in its list, with the reconnect rules of 4.13. The builder picks the foreground-service
+    type Android 17 requires and records why.
+  - hostd sends each notification on that socket as a `notify` message with an id. The app shows
+    it with its buttons and replies `ack`. hostd keeps unacknowledged notifications per device (up to
+    100, for 24 h, oldest dropped first) and sends them again when that device reconnects, so nothing
+    is missed while the phone was out of signal. An acknowledged id is never shown twice.
+  - Each machine notifies the phone directly, so the laptop does not depend on the desktop.
+  - Battery: one always-open connection per machine. Ben sets Porthole's battery setting to
+    "Unrestricted" once, so Android does not cut it off. The extra battery use is a **GUESS** until
+    measured in P4.
 
 ### 4.8 Remote image paste and file sharing (Moshi: image paste, file sharing)
 - From the composer: camera, photo picker, file picker, or clipboard image. From any Android app:
@@ -342,7 +338,7 @@ drawer on the phone. Its groups, top to bottom:
 - hostd serves the control room at `/` on each computer. It is the same screens the phone app shows
   (approach A, decision 10.1), laid out for a wide window with the sidebar always visible. It opens
   in any browser on the desktop or the laptop.
-- **Both machines in one view** (**ASSUMED**, decision 9.3): the page (or the phone app) talks to every machine in its list
+- **Both machines in one view** (decision 10.12): the page (or the phone app) talks to every machine in its list
   directly: one event WebSocket per machine, and requests to each machine's `/v1` API. hostds never
   talk to each other. The inbox, the badges and the sidebar merge what each machine reports. Each
   hostd accepts calls from its own control-room origin and from the origins of the machines in its
@@ -351,7 +347,7 @@ drawer on the phone. Its groups, top to bottom:
 ### 4.16 Android app (approach A)
 - A native Android app (Kotlin). It shows the shared screens from the machine's hostd in a WebView,
   and does natively only what a web page cannot:
-  - notifications with action buttons, and the push route (4.7);
+  - the always-connected service and notifications with action buttons (4.7);
   - the Android share target (4.8), and camera/photo/file pickers;
   - the microphone recording and text-to-speech (4.12);
   - noticing network changes to reconnect quickly (4.13);
@@ -390,8 +386,9 @@ allowed exact `Origin`). Request bodies are `application/json`, except uploads (
 voice (`audio/wav`), and `DELETE` (no body).
 - `GET /v1/machine`: this machine's name, hostd version, feature health.
 - `GET /v1/sessions`: the session tree (4.1), including per session `status`, `liveVoice`, `cwd`
-  and `dirty` (uncommitted git changes, 4.9). `WS /v1/events`: session, status and inbox changes,
-  pushed on change.
+  and `dirty` (uncommitted git changes, 4.9). `WS /v1/events?device=<name>&since=<notifyId>`:
+  session, status and inbox changes pushed on change, plus `notify` messages (4.7) that the client
+  answers with `{type: "ack", id}`.
 - `GET /v1/sessions/:id/chat?after=<cursor>` and `WS /v1/sessions/:id/chat`: `backlog`, then
   `append`.
 - `GET /v1/sessions/:id/screen`; `WS /v1/sessions/:id/pty`.
@@ -401,8 +398,6 @@ voice (`audio/wav`), and `DELETE` (no body).
   panes (4.3).
 - `GET /v1/inbox`; `GET /v1/inbox/archive` (last 7 days);
   `POST /v1/inbox/:itemId/answer` `{optionIndexes: [..] | text}`; `POST /v1/inbox/:itemId/archive`.
-- `POST /v1/push/register` `{endpoint, device}` (endpoint must be on the configured ntfy, 4.7);
-  `DELETE /v1/push/register/:device`.
 - `POST /v1/uploads` (multipart) → `{path}`. `POST /v1/voice` (WAV) → `{text}`;
   `GET /v1/voice/kept` (failed recordings kept for recovery).
 - `GET /v1/sessions/:id/diff`; `GET /v1/previews` (each with its open URL
@@ -434,7 +429,7 @@ voice (`audio/wav`), and `DELETE` (no body).
     there. Preview pages (port 8443) and every other site fail it.
   - CORS headers are sent only to those same exact origins. Preflight `OPTIONS` requests are exempt
     from `X-Porthole` but still need an allowed exact `Origin`.
-- **Local programs (ASSUMED, decision 9.4).** `tailscale serve` forwards to hostd on this computer,
+- **Local programs (decision 10.13).** `tailscale serve` forwards to hostd on this computer,
   so hostd must tell a forwarded request from a local program that fakes the headers:
   - At P1 start the builder checks whether `tailscale serve` can forward to a Unix socket, and
     whether Bun can read the connecting process's user (`SO_PEERCRED`). If both work, hostd listens
@@ -536,9 +531,9 @@ shortcuts, doctor.
    refused as read-only.
 2. Inbox lifetimes with a fake clock: a done item is archived after 10 min, any item after 6 h, and
    archived items leave `/v1/inbox`.
-3. A "needs you" item produces exactly one message on a scratch UnifiedPush endpoint (a test topic
-   on the private ntfy, read with `ntfy subscribe`). The message carries the item id, summary and
-   options. The 61st message in a minute is held back.
+3. A "needs you" item produces exactly one `notify` message on a test client's `/v1/events` socket,
+   carrying the item id, summary and options. Not acknowledged, it is sent again after the client
+   reconnects; acknowledged, it is not. The 61st notification in a minute is held back.
 4. An upload lands under `uploads/<date>/` with mode 0600 and its path is returned; 51 MB is refused.
 5. The diff for a scratch git repo lists staged, unstaged and untracked files correctly; a non-repo
    says so.
@@ -592,14 +587,6 @@ both.
 ## 9. Open decisions for Ben (do not block P1 on these)
 
 1. Android package and app name: `ai.porthole.app` / "Porthole" are working names.
-2. Push route: ntfy + UnifiedPush is ASSUMED (4.7, decision 10.3); KDE Connect cannot carry
-   buttons.
-3. **Both machines in one view (ASSUMED).** The page and the phone app call each machine directly and
-   merge the results (4.15). Alternative: one hostd fetches from the other and serves both, which
-   means machine-to-machine trust and a single point of failure.
-4. **Local programs (ASSUMED).** If hostd cannot prove a request came through `tailscale serve`
-   (5.4), the limit is written down instead: any program already running as Ben could fake his
-   identity to hostd, which is no worse than what it can already do.
 
 ## 10. Decision log
 
@@ -607,16 +594,15 @@ both.
    WebView. Rejected: B, fully native screens (everything built twice); C, a home-screen web page
    only (the watch cannot reach it).
 2. **Helper models**: Anthropic only (Ben, 2026-10-12). Rejected: GPT only, both.
-3. **Push route: ntfy + UnifiedPush (ASSUMED, awaiting Ben).** Ben asked about KDE Connect on
-   2026-10-13. Checked that day (`kdeconnect-cli --list-devices`): KDE Connect 26.08.1 runs on the
-   desktop, and the Pixel is paired and reachable at its Tailscale address (100.120.182.107; the tool
-   labels the link "LAN"). But its desktop-to-phone message (`kdeconnect.ping`) is plain text with
-   no buttons, and [INFERENCE] another app (Porthole) cannot receive KDE Connect messages without its
-   own copy of the KDE Connect protocol. So it cannot carry
-   Approve/Open buttons or wake the Porthole app (protocol doc:
-   github.com/KDE/kdeconnect-meta, `protocol-schemas/protocol.md`). Also rejected: Google push
-   (needs a Google project, goes through Google); the Porthole app holding its own always-open
-   connection (a second permanent background connection beside ntfy's, so more battery).
+3. **Push route: Porthole's own always-open connection** (Ben, 2026-10-13: "porthole"). Rejected:
+   - KDE Connect: checked 2026-10-13 (`kdeconnect-cli --list-devices`): 26.08.1 runs on the desktop,
+     and the Pixel is paired and reachable at its Tailscale address (100.120.182.107; the tool labels
+     the link "LAN"). But its desktop-to-phone message (`kdeconnect.ping`) is plain text with no
+     buttons, and [INFERENCE] another app cannot receive KDE Connect messages without its own copy of
+     the protocol (github.com/KDE/kdeconnect-meta, `protocol-schemas/protocol.md`).
+   - ntfy + UnifiedPush through Ben's private ntfy: Google-free and lighter on battery, but one more
+     moving part between Porthole and the phone.
+   - Google push: needs a Google project and goes through Google.
 4. **No Mosh / ET** (Ben, 2026-10-12: "whatever Moshi uses ... I would like to be able to reconnect").
    Tailscale + auto-reconnect + tmux covers it; browsers and WebViews cannot speak Mosh's UDP.
 5. **Dictation**: local voxtype only (Ben, 2026-10-12). Rejected: bring-your-own-key cloud, phone
@@ -633,3 +619,8 @@ both.
 11. **Toolchain** install in the home folder: yes (Ben, 2026-10-13). **Device installs**: ask at the
     time (Ben, 2026-10-13). **GitHub**: private `CymaticStatic/porthole` (Ben, 2026-10-12; again
     2026-10-13).
+12. **Both machines in one view** (Ben, 2026-10-13: "keep as written"): the page and the phone app
+    call each machine directly and merge the results (4.15). Rejected: one hostd fetching from the
+    other (machine-to-machine trust, single point of failure).
+13. **Local programs** (Ben, 2026-10-13: "accept this"): if hostd cannot prove a request came
+    through `tailscale serve` (5.4), the limit is written down instead.
