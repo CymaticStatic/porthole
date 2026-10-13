@@ -75,7 +75,7 @@ Established read-only on 2026-10-13 by the planning agent. No omp session was ru
 
 ## P1 contract gaps
 
-P1's interfaces are fixed while P1 is built. P2 needs these additions; Task 1 makes all of them, additively, on top of the merged P1 (no P1 behaviour changes, all P1 tests must still pass).
+P1's interfaces are fixed while P1 is built. P2 needs these additions; Task 1 makes all of them, additively, on top of the merged P1 (no P1 behaviour changes; all P1 tests must still pass, with one allowed test change: P1's `server/test/config.test.ts` compares `bin` with `toEqual`, so its two `expect(c.bin)` lines become `toMatchObject`, Task 1 step 5).
 
 1. **`HostdConfig` has no P2 fields.** Added: `previewPort` (8798; 0 in tests), `previewRanges` (`"3000-3999,4000-4999,5000-5999,8000-8999"`), `usageCollection` (true), `voiceEnhance` (false), `ompExtensionsDir` (`~/.omp/agent/extensions`), and `bin.git`, `bin.voxtype`, `bin.voxflow`, `bin.ss`, `bin.nvidiaSmi`, `bin.omp` (absolute paths, F1/F6/F10/F11/F12). `Scratch.config()` sets `previewPort: 0` and points the new binaries at fakes (git stays real: tests use scratch repos).
 2. **`EventsHub` has no per-socket hooks**, and `sessionsFeature`'s `/v1/events` `message()` drops input. P2 needs: run code when a socket opens (replay unacked notifications for `?device=`), receive `{type:"ack", id}`, and send to one socket. Added: `hub.onOpen(fn)`, `hub.onMessage(fn)`, `hub.receive(ws, text)`, `hub.sendTo(ws, msg)`; `sessionsFeature`'s channel `message()` calls `hub.receive`, and `add()` fires `onOpen` listeners.
@@ -132,7 +132,7 @@ server/src/features/shortcuts.ts         Task 11  GET|PUT /v1/shortcuts, step va
 server/src/features/config.ts            Task 11  configFeature(file): GET|PUT /v1/config
 server/src/features/doctor.ts            Task 11  GET /v1/doctor
 server/test/shortcuts.test.ts            Task 11
-server/test/config.test.ts               Task 11
+server/test/config-feature.test.ts       Task 11
 server/test/doctor.test.ts               Task 11
 server/src/main.ts                       Task 12  modify: P2 factories in FEATURES
 server/test/live/events-once.ts          Task 12  the one real omp run (P2.1 + P2.9)
@@ -156,7 +156,7 @@ Every file in the File Structure belongs to exactly one task. Group B tasks touc
 ### Task 1: P2 foundation on top of P1 (the contract gaps)
 
 **Files (owned):**
-- Modify: `server/src/config.ts`, `server/src/events/hub.ts`, `server/src/features/sessions.ts`, `server/src/auth/auth.ts`, `server/src/sessions/registry.ts`, `server/src/hostd.ts`, `server/test/helpers/scratch.ts`
+- Modify: `server/src/config.ts`, `server/src/events/hub.ts`, `server/src/features/sessions.ts`, `server/src/auth/auth.ts`, `server/src/sessions/registry.ts`, `server/src/hostd.ts`, `server/test/helpers/scratch.ts`, `server/test/config.test.ts` (P1's own test: the one allowed P1 test change, Step 5: its two `expect(c.bin).toEqual(...)` lines become `toMatchObject`)
 - Create: `server/src/diff/git.ts`, `server/src/pids.ts`, `server/test/p2-foundation.test.ts`
 
 **Interfaces produced (used by every later task):**
@@ -323,6 +323,21 @@ test("a pid file marks every running hostd (Task 8 reads it) and goes away on st
   expect(existsSync(file)).toBe(false);
 });
 
+test("a start() failure, then stop() twice, never unregisters a pid this hostd did not register", async () => {
+  const file = path.join(PIDS_DIR, String(process.pid));
+  const keeper = await startTestHostd(s, [sessionsFeature]);
+  const boom: FeatureFactory = () => ({ routes: [], channels: [], start() { throw new Error("start failed"); } });
+  // createHostd calls its own stop() when a start() throws; startTestHostd rejects with the same error
+  await expect(startTestHostd(s, [sessionsFeature, boom])).rejects.toThrow("start failed");
+  expect(existsSync(file)).toBe(true);   // the failed hostd never registered, so the keeper's pid file stays
+  const extra = await startTestHostd(s, [sessionsFeature]);
+  await extra.stop();
+  await extra.stop();                      // a second stop() must not unregister again
+  expect(existsSync(file)).toBe(true);
+  await keeper.stop();
+  expect(existsSync(file)).toBe(false);
+});
+
 test("Ben's own git settings (colour always, no prefixes) cannot change the diff format", async () => {
   const dir = repo("hostile");
   writeFileSync(path.join(dir, "a.txt"), "two\n");
@@ -482,23 +497,36 @@ export function unregisterPid(dir = PIDS_DIR): void {
 }
 ```
 
-`server/src/hostd.ts` (Task 1 owns it for this change): `createHostd` calls `registerPid()` once the listener is bound (just before it returns) and `unregisterPid()` in `stop()` after `server.stop(true)`. A crashed hostd leaves its file behind; Task 8 keeps only pids whose `/proc/<pid>` exists, so a stale file is harmless.
+`server/src/hostd.ts` (Task 1 owns it for this change): `createHostd` keeps a per-hostd flag `let registered = false`. It calls `registerPid()` once the listener is bound and the features have started (just before it returns) and sets `registered = true`; `stop()` runs `if (registered) { registered = false; unregisterPid(); }` after `server.stop(true)`. The flag matters because `createHostd` calls `hostd.stop()` when a feature's `start()` throws, before any `registerPid()`: an unconditional `unregisterPid()` there (and again on a second `stop()`) would lower another hostd's count in the same process, or delete the pid file under a running hostd. A crashed hostd leaves its file behind; Task 8 keeps only pids whose `/proc/<pid>` exists, so a stale file is harmless.
 
 `server/test/helpers/scratch.ts`: make the fake-program writer public as `writeFake(name, body)` (returns the path; the private `writeExec` stays the implementation). In `config()`, set `previewPort: 0`, `previewRanges: "none"`, `usageCollection: true`, `voiceEnhance: false`, `ompExtensionsDir: path.join(this.root, "extensions")`, `bin.git: "/usr/bin/git"`, and point `voxtype`, `voxflow`, `ss`, `nvidiaSmi` at `fakeBin/<name>` and `omp` at `fakeBin/omp-cli` (not `omp`: that name is the session fake). The constructor writes each of those five as `#!/bin/sh\necho "<name>: not faked in this test" >&2\nexit 1\n`. Change the session fake `omp` body to `#!/bin/sh\nexec 3<"$1"\nif [ "$2" = "--echo" ]; then cat -v; fi\nwhile :; do sleep 1; done\n` and add `ompEchoCommand(t)` returning `ompCommand(t) + " --echo"` (the shell stays the process named `omp`, so `findOmp` still finds it, and its `cat -v` child shows every key the pane receives).
 
-- [ ] **Step 5: Run the new test and the whole P1 suite (the gaps must not change P1 behaviour)**
+- [ ] **Step 5: Make the one allowed P1 test change, then run the new test and the whole P1 suite (the gaps must not change P1 behaviour)**
+
+Gap 1 adds six keys to `bin`, so P1's `server/test/config.test.ts` lines 17 and 32, which compare `c.bin` with `toEqual` against exactly the four P1 keys, can no longer pass. That is the **one allowed change to a P1 test file**, and Task 1 owns `server/test/config.test.ts` for it alone. Change those two lines, nothing else in the file:
+
+```ts
+// server/test/config.test.ts line 17
+-  expect(c.bin).toEqual({ tmux: "/usr/bin/tmux", herdr: "/usr/bin/herdr", pactl: "/usr/bin/pactl", tailscale: "/usr/bin/tailscale" });
++  expect(c.bin).toMatchObject({ tmux: "/usr/bin/tmux", herdr: "/usr/bin/herdr", pactl: "/usr/bin/pactl", tailscale: "/usr/bin/tailscale" });
+// server/test/config.test.ts line 32
+-  expect(c.bin).toEqual({ tmux: "/usr/bin/tmux", herdr: "/opt/herdr", pactl: "/x/pactl", tailscale: "/usr/bin/tailscale" });
++  expect(c.bin).toMatchObject({ tmux: "/usr/bin/tmux", herdr: "/opt/herdr", pactl: "/x/pactl", tailscale: "/usr/bin/tailscale" });
+```
+
+The P1 keys are still checked exactly (`toMatchObject` fails on a wrong or missing value); only the extra P2 keys are allowed. No other P1 test is changed.
 
 ```bash
 /home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/p2-foundation.test.ts
 /home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test
 ```
 
-Expected: all PASS. If a P1 test now fails, fix the Task 1 change, never the P1 test.
+Expected: all PASS. If any other P1 test fails, fix the Task 1 change, never that P1 test.
 
 - [ ] **Step 6: Commit and push** (files by name)
 
 ```bash
-git add server/src/config.ts server/src/events/hub.ts server/src/features/sessions.ts server/src/auth/auth.ts server/src/sessions/registry.ts server/src/diff/git.ts server/src/hostd.ts server/src/pids.ts server/test/helpers/scratch.ts server/test/p2-foundation.test.ts
+git add server/src/config.ts server/src/events/hub.ts server/src/features/sessions.ts server/src/auth/auth.ts server/src/sessions/registry.ts server/src/diff/git.ts server/src/hostd.ts server/src/pids.ts server/test/helpers/scratch.ts server/test/p2-foundation.test.ts server/test/config.test.ts
 git commit -m "P2 foundation: config fields, hub hooks, identify(), safe git, dirty"
 git push
 ```
@@ -1150,7 +1178,7 @@ export const inboxFeature: FeatureFactory;
 - `answerSteps(n, a)`: the cursor is moved to the top first because it may start on the `recommended` row (F16): `Up` × (n + 2), then for an option `Down` × index, `Enter`; for typed text `Down` × n (the "Other" row, **GUESS** F16, confirmed in Task 12), `Enter`, `{text}`, `Enter`.
 - `chunks` splits into lists of at most 32 steps (P1's `parseSteps` limit); each chunk goes through `Deliverer.keys`, so P1's live-voice refusal is re-checked before every chunk.
 - `answerRefusal` returns the reason to refuse, or `null`, in this order: no open question, `question.count !== 1`, `question.multi`, the question's qid already in `answered`, `info === null`, `info.omp?.pid !== question.pid` → `READ_ONLY`; option index ≥ options length → `"no such option"`; typed text while `liveVoiceBlocks(info)` → `AT_DESK`. Option answers on live-voice panes are left to `Deliverer.keys`, which refuses with P1's own reason.
-- HTTP: refusals are 409 `{status:"refused", reason}`, 404 for an unknown item, 400 for a bad body; a `Deliverer.keys` result maps like P1's `send.ts` (`sent` 200, `refused` 409, `failed` 502). A qid goes into `answered` before the first chunk is sent, so a second tap while keys are still going is refused; it comes out again if the first chunk is not `sent` (nothing reached the dialog), and stays in if a later chunk fails.
+- HTTP: refusals are 409 `{status:"refused", reason}`, 404 for an unknown item, 400 for a bad body; a `Deliverer.keys` result maps like P1's `send.ts` (`sent` 200, `refused` 409, `failed` 502). A qid goes into `answered` before the first chunk is sent, so a second tap while keys are still going is refused; it comes out again **only** when the result is `refused` (a refusal always happens before any key is sent), and stays in on `failed` (some keys may already be in the dialog, so the question is read-only from then on).
 
 **Feature wiring (`inboxFeature(d)`):**
 - `store = new InboxStore({ file: stateDir/inbox.json, machine: d.config.machineName })`; `queue = new NotifyQueue({ file: stateDir/notify.json, send: (m) => d.hub.broadcast(m) })`; `deliverer = new Deliverer(d.config, d.registry, d.sentLog)`; `socket = new EventsSocket(path.join(d.config.runtimeDir, "events.sock"), onEvent)`.
@@ -1165,7 +1193,7 @@ export const inboxFeature: FeatureFactory;
 
 ```ts
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 import { inboxDir } from "../src/deliver/inbox";
@@ -1180,10 +1208,14 @@ import type { HerdrAgentFixture } from "./helpers/scratch";
 
 let s: Scratch;
 let h: TestHostd;
+let FAIL_SEND = "";
 const HERDR_FIXTURE: HerdrAgentFixture = { terminal_id: "t1", agent_status: "idle", workspace_id: "w1", tab_id: "w1:t1", pane_id: "w1:p1", focused: false, revision: 1, name: "rev" };
 beforeAll(async () => {
   s = new Scratch();
-  h = await startTestHostd(s, [sessionsFeature, sendFeature, inboxFeature]);
+  // a tmux wrapper that fails every send-keys while FAIL_SEND exists and runs the real tmux otherwise (listing and capture are unaffected)
+  FAIL_SEND = path.join(s.root, "fail-send-keys");
+  const flaky = s.writeFake("tmux-flaky", "#!/bin/sh\nif [ -e '" + FAIL_SEND + "' ]; then for a in \"$@\"; do [ \"$a\" = send-keys ] && exit 1; done; fi\nexec /usr/bin/tmux \"$@\"\n");
+  h = await startTestHostd(s, [sessionsFeature, sendFeature, inboxFeature], { bin: { tmux: flaky } });
 });
 afterAll(async () => { await h.stop(); s.cleanup(); });
 
@@ -1292,6 +1324,24 @@ test("P2.10: live voice refuses option answers, typed answers and Stop with a pl
   }
 });
 
+test("a failed key send leaves the question read-only (keys may already be in the dialog)", async () => {
+  const p = await echoPane("flaky");
+  await ask(p.pid, "q7");
+  const item = await itemFor("q7");
+  writeFileSync(FAIL_SEND, "");
+  try {
+    const r = await post(h, "/v1/inbox/" + item.id + "/answer", { optionIndexes: [0] });
+    expect([r.status, (await r.json()).status]).toEqual([502, "failed"]);
+  } finally {
+    rmSync(FAIL_SEND, { force: true });
+  }
+  // tmux works again, but the dialog state is unknown, so the retry is refused and no key is sent
+  const again = await post(h, "/v1/inbox/" + item.id + "/answer", { optionIndexes: [0] });
+  expect([again.status, (await again.json()).reason]).toEqual([409, "Answer this in the terminal"]);
+  await Bun.sleep(200);
+  expect(screen(p, "flaky")).not.toContain(UP);
+});
+
 test("P2.10: omp with a live inbox is reachable under live voice: the message goes through the inbox, not the keys", async () => {
   const p = await echoPane("voiceinbox");
   mkdirSync(inboxDir(h.config.inboxRoot, p.pid), { recursive: true });
@@ -1373,7 +1423,7 @@ export function answerSteps(optionCount: number, a: Answer): KeyStep[] {
 }
 ```
 
-The answer handler: `item = store.get(id)` (404 when missing); `a = parseAnswer(body)` (400); `info = await d.registry.get(item.sessionId, 0)`; `reason = answerRefusal(item, info, a, answered)` (409); `answered.add(qid)` before the first chunk (so a second tap while keys are still going is refused); for each chunk `r = await deliverer.keys(item.sessionId, chunk)`. If the **first** chunk does not come back `sent` (live voice, pane gone, tmux error), nothing reached the dialog: `answered.delete(qid)` and return that result with its status code, so the item can be answered again once the cause is gone. If a **later** chunk fails, the qid stays in `answered` (half-typed keys make the dialog state unknown, so the item is read-only from then on) and the result is returned. All chunks sent → 200 `{status: "sent"}`.
+The answer handler: `item = store.get(id)` (404 when missing); `a = parseAnswer(body)` (400); `info = await d.registry.get(item.sessionId, 0)`; `reason = answerRefusal(item, info, a, answered)` (409); `answered.add(qid)` before the first chunk (so a second tap while keys are still going is refused); for each chunk `r = await deliverer.keys(item.sessionId, chunk)`. `answered.delete(qid)` runs **only** when `r.status === "refused"` on the **first** chunk: `Deliverer.keys` returns a refusal (live voice, no such session) before it sends any key (`deliver.ts` lines 190, 204, 219, 222), so nothing reached the dialog and the item can be answered again once the cause is gone. A `failed` result never deletes the qid: `Deliverer.tmuxKeys` sends one step at a time and returns `failed` at the first step that fails, after the earlier keys are already in (for a typed answer the first Enter may already have opened the "Other" box, and a retry would type Up/Down into the text field), so the dialog state is unknown and the question stays read-only (409 "Answer this in the terminal" on every later tap). A refusal or failure on a **later** chunk also leaves the qid in, because the earlier chunks' keys are already in. Return the result with its status code (`refused` 409, `failed` 502). All chunks sent → 200 `{status: "sent"}`.
 
 - [ ] **Step 4: Run the test and the P1 suite**
 
@@ -1658,22 +1708,25 @@ Rules (SPEC 4.10):
   - every request first passes `auth.identify(req)` (403 with the reason otherwise);
   - `GET /__porthole/preview?port=N`: `allowed(N)` must be true (the latest scan found it and it is not refused; 404 "port N was not found by the latest scan" or 403 with the refusal reason); a random 32-byte hex token maps to `{device, port}`; any older token of the same device is deleted (one preview per device); answer 302 to `/` with `Set-Cookie: porthole_preview=<token>; Path=/; HttpOnly; Secure; SameSite=Lax`;
   - any other request needs a known `porthole_preview` cookie whose device matches the verdict's device (403 "open the preview from Porthole first"); WebSocket upgrades and non-GET/HEAD requests also need `Origin` exactly `cfg.origin + ":8443"` (403);
-  - HTTP is forwarded with `fetch("http://127.0.0.1:" + port + path + query, { method, headers, body, redirect: "manual" })`, after removing `accept-encoding`, `cookie`'s `porthole_preview` pair, `x-porthole-local`, every `x-forwarded-*` header and every `tailscale-*` header, and after setting `Host` to exactly `127.0.0.1:<port>` (the dev server must see its own address, not the Tailscale name or the proxy's port, or its host checks and absolute redirects break); the answer is returned as-is (status, headers, body stream);
-  - WebSockets: connect upstream first (`new WebSocket("ws://127.0.0.1:" + port + path, protocols)`), upgrade the client only after upstream `open` (502 if it fails within 5 s), then pipe messages both ways and close each side when the other closes.
+  - HTTP is forwarded with `fetch("http://127.0.0.1:" + port + path + query, { method, headers, body, redirect: "manual" })`, after removing `accept-encoding`, `cookie`'s `porthole_preview` pair, `x-porthole-local`, every `x-forwarded-*` header and every `tailscale-*` header, and after setting `Host` to exactly `127.0.0.1:<port>` (the dev server must see its own address, not the Tailscale name or the proxy's port, or its host checks and absolute redirects break); the answer is returned as-is (status, headers, body stream) **except** a `Location` header that starts with `http://127.0.0.1:<port>` or `http://localhost:<port>` (the upstream's own `<port>`; a framework builds absolute redirects from the `Host` it was given): that prefix is cut off so the phone gets just the path and query (`http://127.0.0.1:3000/target` becomes `/target`). Any other `Location` (another port, another host) is returned untouched. The fixture's `/redir` returns an absolute `Location` and the test asserts the proxy sends `/target`;
+  - WebSockets: connect upstream first with `new WebSocket("ws://127.0.0.1:" + port + path + query, { protocols, headers })` (path **and query**, the same URL the HTTP side builds; dev-server HMR sockets carry tokens in the query) where `headers` holds the client's `cookie` header minus the `porthole_preview` pair (omitted when nothing is left, so the app's own session cookies still reach the upstream) and `Origin: http://127.0.0.1:<port>` (the upstream's own address, as for HTTP's `Host`); upgrade the client only after upstream `open` (502 if it fails within 5 s), then pipe messages both ways and close each side when the other closes. Bun's `WebSocket` constructor accepts `headers` in its options object; if the installed Bun rejects it, report that rather than dropping the cookie or Origin. The fixture's `/ws` echoes the query, cookie and origin it saw and the test asserts them.
 - `previewFeature`: builds `new Auth(d.config, new Whois(d.config.bin.tailscale), d.localToken)` (same constructor P1's `hostd.ts` uses; `bin.tailscale` per P1 config, check the name), keeps the latest scan, rescans on each `GET /v1/previews` (and at most every 10 s for `allowed()`), starts the proxy in `start()` and stops it in `stop()`.
 
 **`server/test/fixtures/preview-upstream.ts`** (run as a child process so its port has another pid than the test hostd):
 
 ```ts
-const server = Bun.serve({
+type WsData = { search: string; cookie: string; origin: string };
+const server = Bun.serve<WsData>({
   hostname: "127.0.0.1",
   port: 0,
   fetch(req, srv) {
     const u = new URL(req.url);
-    if (u.pathname === "/ws" && srv.upgrade(req)) return undefined;
+    if (u.pathname === "/ws" && srv.upgrade(req, { data: { search: u.search, cookie: req.headers.get("cookie") ?? "none", origin: req.headers.get("origin") ?? "none" } })) return undefined;
+    // absolute Location built from this server's own address, the way a framework does from the Host it sees
+    if (u.pathname === "/redir") return new Response(null, { status: 302, headers: { Location: "http://127.0.0.1:" + server.port + "/target" } });
     return new Response("upstream " + u.pathname + u.search + " enc=" + (req.headers.get("accept-encoding") ?? "none") + " host=" + (req.headers.get("host") ?? "none") + " xff=" + (req.headers.get("x-forwarded-for") ?? "none"));
   },
-  websocket: { message(ws, m) { ws.send("echo " + String(m)); } },
+  websocket: { message(ws, m) { ws.send("echo " + String(m) + " q=" + ws.data.search + " cookie=" + ws.data.cookie + " origin=" + ws.data.origin); } },
 });
 console.log(String(server.port));
 ```
@@ -1738,13 +1791,18 @@ test("P2.6: reachable through the proxy over HTTP and WebSocket", async () => {
   // the request reaches the proxy as host 127.0.0.1:<proxyPort>; the upstream must see its own port, and no forwarded-for
   expect(await page.text()).toBe("upstream /hello?x=1 enc=none host=127.0.0.1:" + P + " xff=none");
 
-  const ws = new WebSocket("ws://127.0.0.1:" + proxyPort + "/ws", { headers: { Cookie: cookie, Origin: h.config.origin + ":8443", "X-Porthole-Local": h.localToken } } as unknown as string[]);
+  // the upstream builds an absolute Location from the Host it saw; the proxy must hand the phone a path, not 127.0.0.1:<port>
+  const redir = await proxy("/redir", { Cookie: cookie });
+  expect([redir.status, redir.headers.get("location")]).toEqual([302, "/target"]);
+
+  // query kept; the porthole_preview cookie pair removed but the app's own cookie forwarded; Origin is the upstream's own address
+  const ws = new WebSocket("ws://127.0.0.1:" + proxyPort + "/ws?token=abc", { headers: { Cookie: cookie + "; app=1", Origin: h.config.origin + ":8443", "X-Porthole-Local": h.localToken } } as unknown as string[]);
   const echoed = await new Promise<string>((resolve, reject) => {
     ws.onopen = () => ws.send("ping");
     ws.onmessage = (e) => resolve(String(e.data));
     ws.onerror = () => reject(new Error("ws error"));
   });
-  expect(echoed).toBe("echo ping");
+  expect(echoed).toBe("echo ping q=?token=abc cookie=app=1 origin=http://127.0.0.1:" + P);
   ws.close();
 
   expect(await rawUpgrade(proxyPort, "/ws", { Cookie: cookie, Origin: h.config.origin, "X-Porthole-Local": h.localToken })).toBe(403);
@@ -1994,7 +2052,7 @@ git push
 
 ### Task 11: Shortcuts, config, doctor
 
-**Files (owned):** Create `server/src/features/shortcuts.ts`, `server/src/features/config.ts`, `server/src/features/doctor.ts`, `server/test/shortcuts.test.ts`, `server/test/config.test.ts`, `server/test/doctor.test.ts`.
+**Files (owned):** Create `server/src/features/shortcuts.ts`, `server/src/features/config.ts`, `server/src/features/doctor.ts`, `server/test/shortcuts.test.ts`, `server/test/config-feature.test.ts`, `server/test/doctor.test.ts`. (`server/test/config.test.ts` is P1's config test, owned by Task 1 for its one allowed change; never create or overwrite it here.)
 
 **Interfaces produced:**
 
@@ -2009,7 +2067,7 @@ export const doctorFeature: FeatureFactory;                   // GET /v1/doctor 
 
 Rules:
 - **Shortcuts** (SPEC 4.4): stored in `stateDir/shortcuts.json` (missing file = `[]`). `PUT` takes `{shortcuts}`: at most 50, each `label` 1-40 characters and unique, each `steps` split by `splitSteps`, each part trimmed, empty parts refused, and the list must pass P1's `parseSteps` (so the same key names and the 32-step limit apply). Errors: 400 `{error: "shortcut \"<label>\": <reason>"}`. Saved by writing `shortcuts.json.tmp` (0600) and renaming. Shortcuts are only stored here; the app sends them through P1's `/keys`, which keeps the live-voice refusal in one place.
-  - **Commas.** `splitSteps` splits on every comma that is not directly preceded by a backslash; `\,` becomes a literal `,` inside that step, and any other backslash stays as typed. So a `text:` step cannot hold a bare comma: `text:hello, world` is two steps (`text:hello` and `world`) and the second is refused; the way to type a comma is `text:hello\, world`. The stored `steps` string keeps the backslash exactly as typed. The app applies the same rule (split on unescaped commas, unescape `\,`) before it calls `/keys`. This limit is written into the README (Task 12 step 6).
+  - **Commas.** `splitSteps` splits on every comma that is not directly preceded by a backslash; `\,` becomes a literal `,` inside that step, and any other backslash stays as typed. So a `text:` step cannot hold a bare comma: `text:hello, world` is two steps (`text:hello` and `world`) and the second is refused; the way to type a comma is `text:hello\, world`. The stored `steps` string keeps the backslash exactly as typed. The app applies the same rule (split on unescaped commas, unescape `\,`) before it calls `/keys`. Two limits follow and are written into the README (Task 12 step 6): there is **no `\\` escape**, so a step cannot end in a literal backslash directly before a separator (a backslash followed by a comma is always a literal comma); and because each part is trimmed, **trailing (and leading) spaces inside a `text:` step are dropped** (`text:ls ` sends `ls`).
 - **Config** (SPEC 4.2 item 6, 5.x): `GET` → `{previewRanges, usageCollection, peers, voiceEnhance, restartNeeded: false}`. `PUT` takes any subset of `previewRanges` (must pass `parseRanges`), `usageCollection` (boolean), `peers` (each must pass the same origin check `validateConfig` applies), `voiceEnhance` (boolean). It reads the config file as JSON (missing = `{}`), merges, runs `validateConfig` on the merged effective config, writes `<file>.tmp` (0600) and renames, then updates `d.config` in place for `previewRanges`, `usageCollection` and `voiceEnhance` (features read these per request). A changed `peers` returns `restartNeeded: true` (gap 6). Unknown keys → 400.
 - **Doctor** (SPEC 4.2, 4.4): checks, each `{id, ok, detail}` in this order: `tmux-mouse:<socket>` for every socket in `cfg.tmuxSocketDir` (`tmux -S <socket> show-options -gv mouse` equals `on`; detail "scrolling needs `set -g mouse on`" otherwise; read-only); `extension:porthole-events` and `extension:live-inbox` (the file in `cfg.ompExtensionsDir` exists and has the same bytes as the repo copy in `omp-extension/`; detail "not installed" / "older than the repo copy"); `events-socket` (`runtimeDir/events.sock` accepts a connection within 500 ms; the doctor sends nothing on it); `voxtype` and `git` (the configured binary exists and is executable); `state-dir` (`stateDir` mode is 0700). The doctor never changes anything.
 
@@ -2044,7 +2102,7 @@ test("a text: step holds a comma only when it is written \\,", async () => {
 });
 ```
 
-`server/test/config.test.ts` (the hostd gets `configFeature(file)` with `file` a scratch JSON written first with `{ "machineName": "testbox", "origin": "<h.config.origin>", "peers": [] }`):
+`server/test/config-feature.test.ts` (a new file; P1's own `server/test/config.test.ts` is never touched by this task; the hostd gets `configFeature(file)` with `file` a scratch JSON written first with `{ "machineName": "testbox", "origin": "<h.config.origin>", "peers": [] }`):
 ```ts
 test("config changes apply at once; peers need a restart; bad values are refused", async () => {
   expect(await (await get(h, "/v1/config")).json()).toMatchObject({ previewRanges: "none", usageCollection: true, peers: [], restartNeeded: false });
@@ -2087,7 +2145,7 @@ The installed case uses P1's `omp-extension/live-inbox.ts` (it exists once P1 is
 - [ ] **Step 2: Run, watch them fail; Step 3: implement per the rules; Step 4: run again**
 
 ```bash
-/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/shortcuts.test.ts server/test/config.test.ts server/test/doctor.test.ts
+/home/cymatic/.local/share/mise/installs/bun/latest/bin/bun test server/test/shortcuts.test.ts server/test/config-feature.test.ts server/test/doctor.test.ts
 ```
 
 Expected: FAIL before step 3, PASS after.
@@ -2095,7 +2153,7 @@ Expected: FAIL before step 3, PASS after.
 - [ ] **Step 5: Commit and push**
 
 ```bash
-git add server/src/features/shortcuts.ts server/src/features/config.ts server/src/features/doctor.ts server/test/shortcuts.test.ts server/test/config.test.ts server/test/doctor.test.ts
+git add server/src/features/shortcuts.ts server/src/features/config.ts server/src/features/doctor.ts server/test/shortcuts.test.ts server/test/config-feature.test.ts server/test/doctor.test.ts
 git commit -m "shortcuts, config and doctor endpoints"
 git push
 ```
@@ -2148,7 +2206,7 @@ install -D -m 0644 /home/cortex/00-system/porthole/repo/omp-extension/porthole-e
 
 New omp sessions load it from their next start; running sessions are unchanged. Tell Ben this in the report (Needs Ben 4). The doctor's `extension:porthole-events` check turns `ok` once the running hostd has P2 code.
 
-- [ ] **Step 6: README.** Add a "P2" section: the new endpoints (SPEC 5.3 list), where files go (`~/.local/state/porthole/uploads/<date>/`, `audio/`, `inbox.json`, `notify.json`, `shortcuts.json`; `$XDG_RUNTIME_DIR/porthole/events.sock`), the preview proxy (127.0.0.1:8798, published by `tailscale serve` on 8443; publishing it is P1's `deploy/serve.ts` job, P2 changes no Tailscale setting), how to read the doctor, that `voiceEnhance` is off by default and why (F10), and the shortcut-step rule: steps are comma-separated, so a `text:` step cannot contain a comma unless it is written `\,` (for example `text:ls\, -la` sends `ls, -la`).
+- [ ] **Step 6: README.** Add a "P2" section: the new endpoints (SPEC 5.3 list), where files go (`~/.local/state/porthole/uploads/<date>/`, `audio/`, `inbox.json`, `notify.json`, `shortcuts.json`; `$XDG_RUNTIME_DIR/porthole/events.sock`), the preview proxy (127.0.0.1:8798, published by `tailscale serve` on 8443; publishing it is P1's `deploy/serve.ts` job, P2 changes no Tailscale setting), how to read the doctor, that `voiceEnhance` is off by default and why (F10), and the shortcut-step rules: steps are comma-separated, so a `text:` step cannot contain a comma unless it is written `\,` (for example `text:ls\, -la` sends `ls, -la`); there is no `\\` escape, so a step cannot end in a literal backslash directly before a separator (`\,` is always a literal comma); and each step is trimmed, so trailing (and leading) spaces inside a `text:` step are dropped (`text:ls ` sends `ls`).
 
 - [ ] **Step 7: Commit and push** (files by name)
 
