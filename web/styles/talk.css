@@ -1,0 +1,240 @@
+/* Talk mode overlay, the read-aloud speaker button and the floating "Stop reading" pill. Tokens come from tokens.css. */
+
+.talk-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: var(--scrim);
+}
+
+.talk-sheet {
+  inline-size: min(100%, 32rem);
+  max-block-size: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-4) var(--sp-4) calc(var(--sp-6) + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-block-end: 0;
+  border-radius: var(--r-2) var(--r-2) 0 0;
+  box-shadow: var(--shadow);
+}
+
+.talk-head {
+  inline-size: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.talk-title {
+  margin: 0;
+  font-size: var(--fs-4);
+  line-height: 1.3;
+}
+
+.talk-close,
+.talk-retry {
+  min-inline-size: var(--tap);
+  padding-inline: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.talk-status {
+  margin: 0;
+  min-block-size: 1.5em;
+  font-size: var(--fs-3);
+  line-height: var(--lh-body);
+  color: var(--text-2);
+  text-align: center;
+}
+
+/* The ring around the mic grows with the loudness of the voice (--level, 0 to 1, set from script). A box-shadow
+   change does not move any layout; with reduced motion the ring still shows the level, it just stops easing. */
+.talk-ring {
+  --level: 0;
+  display: grid;
+  place-items: center;
+  inline-size: 9rem;
+  block-size: 9rem;
+  border-radius: 50%;
+  box-shadow: 0 0 0 calc(var(--level) * 1rem) color-mix(in oklch, var(--accent) 28%, transparent);
+  transition: box-shadow var(--dur-2) var(--ease);
+}
+
+.talk-mic {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--sp-2);
+  inline-size: 7rem;
+  block-size: 7rem;
+  padding: var(--sp-2);
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--fs-2);
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+}
+
+.talk-mic:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.talk-overlay[data-state="recording"] .talk-mic {
+  background: var(--danger);
+  color: var(--surface);
+}
+
+.talk-heard {
+  margin: 0;
+  inline-size: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-2);
+  background: var(--mine);
+  font-size: var(--fs-3);
+  line-height: var(--lh-body);
+  overflow-wrap: anywhere;
+}
+
+.talk-error {
+  inline-size: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-2);
+  color: var(--text);
+  line-height: var(--lh-body);
+}
+
+.talk-error[hidden],
+.talk-heard[hidden],
+.talk-error-reason[hidden],
+.talk-stop-reading[hidden] {
+  display: none;
+}
+
+.talk-error-reason {
+  color: var(--text-2);
+  font-size: var(--fs-2);
+}
+
+/* ---- Glyphs, drawn with CSS so no icon file or inline markup is needed ---- */
+
+.talk-glyph-mic {
+  position: relative;
+  inline-size: 0.9rem;
+  block-size: 1.5rem;
+  border: 3px solid currentColor;
+  border-radius: 0.6rem;
+  box-sizing: border-box;
+}
+
+.talk-glyph-mic::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 50%;
+  inset-block-start: 100%;
+  inline-size: 3px;
+  block-size: 0.4rem;
+  margin-inline-start: -1.5px;
+  background: currentColor;
+}
+
+.talk-overlay[data-state="recording"] .talk-glyph-mic {
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.talk-glyph-speaker {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+}
+
+.talk-glyph-speaker::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  inset-block-start: 0.3rem;
+  inline-size: 0.35rem;
+  block-size: 0.5rem;
+  background: currentColor;
+}
+
+.talk-glyph-speaker::after {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0.3rem;
+  inset-block-start: 0.05rem;
+  border-block: 0.5rem solid transparent;
+  border-inline-start: 0;
+  border-inline-end: 0.55rem solid currentColor;
+}
+
+/* ---- Read-aloud: the speaker button under a reply, and the pill that stops everything ---- */
+
+.talk-speaker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-inline-size: var(--tap);
+  padding-inline: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--fs-2);
+  cursor: pointer;
+}
+
+.talk-stop-reading {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: calc(var(--sp-5) + env(safe-area-inset-bottom, 0px));
+  z-index: 70;
+  inline-size: max-content;
+  max-inline-size: calc(100% - var(--sp-5));
+  margin-inline: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-block-size: var(--tap);
+  padding-inline: var(--sp-5);
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: var(--fs-3);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .talk-ring { transition: none; }
+}

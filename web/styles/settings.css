@@ -1,0 +1,134 @@
+/* Settings (this device) and Config (one machine). Everything is scoped under .settings-view. */
+.settings-view {
+  display: block;
+  min-inline-size: 0;
+  max-inline-size: 40rem;
+  margin-inline: auto;
+  padding: var(--sp-4);
+  overflow-wrap: anywhere;
+}
+.settings-view [hidden] { display: none !important; }
+
+.set-title { margin: 0 0 var(--sp-4); font-size: var(--fs-5); line-height: 1.25; }
+
+.set-section {
+  margin-block-end: var(--sp-5);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+}
+.set-heading { margin: 0 0 var(--sp-3); font-size: var(--fs-4); line-height: 1.3; }
+
+.set-stack { display: flex; flex-direction: column; gap: var(--sp-3); min-inline-size: 0; }
+.set-stack + .set-stack, .set-stack + .set-note, .set-note + .set-stack { margin-block-start: var(--sp-3); }
+
+.set-note, .set-sub { margin: 0; font-size: var(--fs-2); line-height: 1.4; color: var(--text-2); }
+.set-sub { display: block; }
+.set-error { margin: var(--sp-2) 0 0; font-size: var(--fs-2); line-height: 1.4; color: var(--danger); font-weight: 600; }
+
+/* A row: words on the left, one control on the right. The whole row is the tap target for a switch. */
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-block-size: var(--tap);
+  padding-block: var(--sp-2);
+  border-block-end: 1px solid var(--border);
+  min-inline-size: 0;
+}
+.set-row:last-child { border-block-end: 0; }
+.set-row-text { display: flex; flex-direction: column; gap: var(--sp-1); min-inline-size: 0; flex: 1 1 auto; }
+.set-row-stack { flex-wrap: wrap; }
+
+.set-field { display: flex; flex-direction: column; gap: var(--sp-1); min-inline-size: 0; font-size: var(--fs-2); color: var(--text-2); margin-block: var(--sp-2); }
+.set-form { display: flex; flex-direction: column; gap: var(--sp-2); margin-block-start: var(--sp-2); }
+.set-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-block-start: var(--sp-2); }
+.set-editor { display: flex; flex-direction: column; gap: var(--sp-2); margin-block-start: var(--sp-3); padding: var(--sp-3); background: var(--surface-2); border-radius: var(--r-1); }
+
+.settings-view .field {
+  inline-size: 100%;
+  min-block-size: var(--tap);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-3);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+}
+.settings-view textarea.field { resize: vertical; }
+.settings-view .field[aria-invalid="true"] { border-color: var(--danger); }
+.settings-view .mono { font-family: var(--font-mono); }
+
+.settings-view .btn {
+  min-block-size: var(--tap);
+  min-inline-size: var(--tap);
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-3);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  cursor: pointer;
+  transition: background-color var(--dur-2) var(--ease);
+}
+.settings-view .btn:hover:not(:disabled) { background: var(--border); }
+.settings-view .btn-primary { color: var(--on-accent); background: var(--accent); border-color: var(--accent); }
+.settings-view .btn-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
+.settings-view .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Size steppers (smaller | value | bigger). */
+.stepper { display: flex; align-items: center; gap: var(--sp-2); }
+.stepper-value { min-inline-size: 4.5rem; text-align: center; font-size: var(--fs-3); font-variant-numeric: tabular-nums; }
+.set-preview { margin: var(--sp-2) 0 var(--sp-3); padding: var(--sp-3); background: var(--surface-2); border-radius: var(--r-1); font-size: var(--fs-3); }
+
+/* A switch: a real checkbox with its look replaced. It stays visible, so a tap on it lands on the input. */
+.settings-view input.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  inline-size: 3.25rem;
+  block-size: 2rem;
+  min-block-size: 2rem;
+  margin: 0;
+  position: relative;
+  background: var(--idle);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  cursor: pointer;
+  transition: background-color var(--dur-2) var(--ease);
+}
+.settings-view input.switch::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 0.2rem;
+  inset-inline-start: 0.2rem;
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  background: var(--surface);
+  border-radius: var(--r-pill);
+  transition: transform var(--dur-2) var(--ease);
+}
+.settings-view input.switch:checked { background: var(--accent); border-color: var(--accent); }
+.settings-view input.switch:checked::after { transform: translateX(1.25rem); }
+.settings-view label.set-row { cursor: pointer; }
+
+/* Step chips (the shortcut preview). */
+.chip-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.chip { padding: var(--sp-1) var(--sp-3); font-size: var(--fs-2); background: var(--mine); border-radius: var(--r-pill); }
+
+/* Doctor results: a word and a shape, never colour alone. */
+.doctor-row { display: flex; align-items: flex-start; gap: var(--sp-3); padding-block: var(--sp-2); border-block-end: 1px solid var(--border); min-inline-size: 0; }
+.doctor-mark { flex: none; inline-size: 1.5rem; font-size: var(--fs-3); text-align: center; }
+.doctor-ok .doctor-mark { color: var(--done); }
+.doctor-bad .doctor-mark { color: var(--needs-text); }
+.doctor-word { font-size: var(--fs-2); color: var(--text-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-view .btn, .settings-view input.switch, .settings-view input.switch::after { transition: none; }
+}
+
+@media (min-width: 700px) {
+  .settings-view { padding: var(--sp-5); }
+}

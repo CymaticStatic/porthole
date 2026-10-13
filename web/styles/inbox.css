@@ -1,0 +1,280 @@
+/* Inbox screen: Needs you / Working / Done. One column on a phone, three from 1100 px. Colour never carries a fact
+   alone: each dot has a spoken name, the context ring carries its percent as words and a triangle when low.
+   Sizes come from tokens.css; the only motion is the short swipe slide, which the tokens turn off for reduced motion. */
+
+.inbox {
+  --warn: var(--danger); /* tokens.css has no warning colour yet; the danger red is the closest and is contrast-checked */
+  display: block;
+  min-inline-size: 0;
+  padding: var(--sp-4);
+}
+
+.inbox [hidden] { display: none !important; }
+
+.inbox-notes { display: grid; gap: var(--sp-2); }
+
+.inbox-note {
+  margin: 0 0 var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  background: var(--surface-2);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.inbox-columns { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-5); align-items: start; }
+
+@media (min-width: 1100px) {
+  .inbox-columns { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); }
+}
+
+.inbox-section { min-inline-size: 0; }
+
+.inbox-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-4);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.inbox-section.is-needs-you .inbox-heading { color: var(--needs-text); }
+
+.inbox-count { font-size: var(--fs-2); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-2); }
+
+.inbox-empty { margin: 0 0 var(--sp-3); color: var(--text-2); overflow-wrap: anywhere; }
+
+.inbox-group { margin: 0 0 var(--sp-4); min-inline-size: 0; }
+
+.inbox-project {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-3);
+  font-weight: 650;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.inbox-machine { margin: 0 0 var(--sp-3); min-inline-size: 0; }
+
+.inbox-machine-name {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-2);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+/* ---- A card ---- */
+
+.inbox-card {
+  position: relative;
+  margin: 0 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+  background: var(--surface-2);
+  overflow: clip;
+  touch-action: pan-y;
+}
+
+.inbox-card[data-column="needs-you"] { border-color: var(--needs); }
+
+.inbox-reveal {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-inline: var(--sp-5);
+  font-size: var(--fs-3);
+  font-weight: 650;
+  color: var(--on-accent);
+  background: var(--danger);
+  visibility: hidden;
+}
+
+.inbox-card.is-swiping .inbox-reveal { visibility: visible; }
+
+.inbox-face {
+  position: relative;
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  min-inline-size: 0;
+  transition: transform var(--dur-3) var(--ease);
+}
+
+.inbox-card.is-dragging .inbox-face { transition: none; }
+
+.inbox-head { display: flex; align-items: flex-start; gap: var(--sp-2); min-inline-size: 0; }
+
+.inbox-dot {
+  flex: none;
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  margin-block-start: 0.4rem;
+  border-radius: var(--r-pill);
+  background: var(--idle);
+}
+
+.inbox-dot.is-needs-you { background: var(--needs); }
+.inbox-dot.is-working { background: var(--working); }
+.inbox-dot.is-done { background: var(--done); }
+
+.inbox-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  margin: 0;
+  font-size: var(--fs-3);
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.inbox-age { flex: none; margin-block-start: 0.15rem; font-variant-numeric: tabular-nums; }
+
+.inbox-body {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.inbox-body.is-open { display: block; overflow: visible; }
+
+.inbox-body.is-question { display: block; overflow: visible; color: var(--text); font-weight: 500; }
+
+.inbox-more {
+  justify-self: start;
+  min-inline-size: var(--tap);
+  padding: 0 var(--sp-3);
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: var(--fs-2);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---- Answering ---- */
+
+.inbox-options { display: grid; gap: var(--sp-2); }
+
+.inbox-option,
+.inbox-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--tap);
+  min-inline-size: var(--tap);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-3);
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background-color var(--dur-1);
+}
+
+.inbox-option { justify-content: flex-start; text-align: start; padding-block: var(--sp-2); border-color: var(--accent); }
+
+.inbox-option:hover, .inbox-option:active,
+.inbox-button:hover, .inbox-button:active { background: var(--surface-2); }
+
+.inbox-option:disabled, .inbox-button:disabled, .inbox-input:disabled { opacity: 0.6; cursor: default; }
+
+.inbox-button.is-primary { border-color: var(--accent); background: var(--accent); color: var(--on-accent); }
+.inbox-button.is-primary:hover, .inbox-button.is-primary:active { background: color-mix(in oklch, var(--accent) 85%, black); }
+
+.inbox-button.is-danger { color: var(--danger); border-color: var(--danger); }
+
+.inbox-other { display: grid; gap: var(--sp-1); min-inline-size: 0; }
+
+.inbox-label { font-size: var(--fs-2); font-weight: 600; color: var(--text-2); }
+
+.inbox-other-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-inline-size: 0; }
+
+.inbox-input {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.inbox-answered { margin: 0; font-weight: 600; color: var(--done); overflow-wrap: anywhere; }
+
+/* ---- Context left ---- */
+
+.inbox-context { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text-2); font-size: var(--fs-2); }
+
+.inbox-ring { flex: none; inline-size: 1.5rem; block-size: 1.5rem; }
+.inbox-ring-track { stroke: var(--border); }
+.inbox-ring-arc { stroke: var(--accent); }
+
+.inbox-warn-shape { flex: none; inline-size: 1.25rem; block-size: 1.25rem; stroke: var(--warn); fill: none; }
+.inbox-warn-shape circle { fill: var(--warn); }
+
+.inbox-context.is-warn { color: var(--warn); font-weight: 650; }
+.inbox-context.is-warn .inbox-ring-arc { stroke: var(--warn); }
+
+/* ---- Failures and actions ---- */
+
+.inbox-notice {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-1);
+  color: var(--text);
+}
+
+.inbox-notice-title { margin: 0; font-weight: 650; color: var(--danger); overflow-wrap: anywhere; }
+.inbox-notice-detail { margin: var(--sp-1) 0 0; font-size: var(--fs-2); overflow-wrap: anywhere; }
+
+.inbox-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding-block-start: var(--sp-1); }
+.inbox-spacer { flex: 1 1 0; }
+
+/* ---- Footer and the archived list ---- */
+
+.inbox-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-block-start: var(--sp-4);
+}
+
+.inbox-hint { margin: 0; font-size: var(--fs-2); color: var(--text-2); }
+
+.inbox-archive { margin-block-start: var(--sp-3); min-inline-size: 0; }
+
+.inbox-archived-list { display: grid; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+
+.inbox-archived-item {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  min-inline-size: 0;
+}
+
+.inbox-archived-title { font-weight: 600; overflow-wrap: anywhere; }

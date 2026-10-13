@@ -1,0 +1,192 @@
+/* Terminal screen: the xterm surface, the key toolbar under it, and the shortcut sheet. Tokens come from tokens.css;
+   xterm's own layout comes from vendor/xterm/css/xterm.css. Nothing here animates. */
+
+.term-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  /* Fill what is left under the top bar. The shell may set --term-offset to its real chrome height. */
+  block-size: calc(100dvh - var(--term-offset, 4rem));
+  min-block-size: 16rem;
+}
+
+.term-screen {
+  flex: 1 1 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  padding: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  overflow: hidden;
+}
+
+/* The program in the terminal owns touch gestures here (swipe, two-finger tap, drag-scroll), not the page. */
+.term-screen,
+.term-screen * { touch-action: none; }
+
+.term-screen .xterm { block-size: 100%; }
+
+.term-screen[data-state="down"],
+.term-screen[data-state="connecting"] { border-color: var(--needs); }
+
+.term-note,
+.term-flash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid var(--needs);
+  border-radius: var(--r-1);
+  color: var(--text);
+  font-size: var(--fs-2);
+  line-height: var(--lh-body);
+}
+
+.term-note[hidden],
+.term-flash[hidden] { display: none; }
+
+/* ---- Toolbar ---- */
+
+.term-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.term-row {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.term-key {
+  flex: 1 1 0;
+  min-inline-size: var(--tap);
+  min-block-size: var(--tap);
+  padding: var(--sp-1) 2px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  font-size: var(--fs-2);
+  line-height: 1.2;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.term-key:hover,
+.term-key:active { background: var(--surface-2); }
+
+.term-key:disabled {
+  color: var(--text-2);
+  cursor: default;
+}
+
+.term-key:disabled:hover { background: var(--surface); }
+
+.term-key[data-latch="once"],
+.term-key[data-latch="locked"],
+.term-key[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  border-color: var(--accent);
+}
+
+/* The lock is told apart from the single tap by its words (Ctrl locked) and by a heavier border, not by colour alone. */
+.term-key[data-latch="locked"] {
+  border-width: 3px;
+  font-weight: 600;
+}
+
+/* ---- Shortcut sheet ---- */
+
+.term-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+}
+
+.term-panel {
+  position: fixed;
+  inset-inline: 0;
+  inset-block-end: 0;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  max-block-size: 75dvh;
+  padding: var(--sp-4);
+  background: var(--surface);
+  color: var(--text);
+  border-block-start: 1px solid var(--border);
+  border-start-start-radius: var(--r-2);
+  border-start-end-radius: var(--r-2);
+  box-shadow: var(--shadow);
+}
+
+.term-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.term-panel-title {
+  margin: 0;
+  font-size: var(--fs-4);
+}
+
+.term-panel-close { flex: 0 0 auto; padding-inline: var(--sp-4); }
+
+.term-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  overflow-y: auto;
+}
+
+.term-panel-note {
+  margin: 0;
+  font-size: var(--fs-2);
+  color: var(--text-2);
+}
+
+.term-shortcut {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-1);
+  min-block-size: var(--tap);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  font-size: var(--fs-3);
+  text-align: start;
+  cursor: pointer;
+}
+
+.term-shortcut:hover,
+.term-shortcut:active { background: var(--surface-2); }
+
+.term-shortcut:disabled {
+  color: var(--text-2);
+  cursor: default;
+}
+
+.term-shortcut-label { font-weight: 600; }
+
+.term-shortcut-steps {
+  font-size: var(--fs-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}

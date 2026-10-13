@@ -1,0 +1,248 @@
+/* Changes (diff), Previews and Usage screens. Colour never carries a fact alone: the diff lines carry + / - marks,
+   usage carries the percent as text. Nothing here animates; every size comes from tokens.css. */
+
+.panel {
+  display: block;
+  min-inline-size: 0;
+  padding: var(--sp-4);
+}
+
+.panel-note {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.panel-detail { font-size: var(--fs-2); }
+
+.panel .section-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: var(--sp-5) 0 var(--sp-2);
+  font-size: var(--fs-2);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.panel .count { font-variant-numeric: tabular-nums; font-weight: 400; }
+
+.panel .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: var(--tap);
+  min-inline-size: var(--tap);
+  padding: 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-1);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-3);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--dur-1);
+}
+
+.panel .btn:hover, .panel .btn:active { background: var(--surface-2); }
+
+.panel .btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.panel .btn-primary:hover, .panel .btn-primary:active {
+  background: color-mix(in oklch, var(--accent) 85%, black);
+}
+
+/* ---- Changes ---- */
+
+.diff { max-inline-size: none; }
+
+.files {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.file {
+  min-inline-size: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+  background: var(--surface);
+}
+
+.file-details > summary,
+.file-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-block-size: var(--tap);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.file-details > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.file-details > summary::-webkit-details-marker { display: none; }
+
+.file-details > summary::after {
+  content: "";
+  flex: none;
+  inline-size: 0.55rem;
+  block-size: 0.55rem;
+  border-inline-end: 2px solid var(--text-2);
+  border-block-end: 2px solid var(--text-2);
+  transform: rotate(-45deg);
+}
+
+.file-details[open] > summary::after { transform: rotate(45deg); }
+
+.file-status {
+  flex: none;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+  font-size: var(--fs-2);
+  line-height: 1.45;
+}
+
+.file-path {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  overflow-wrap: anywhere;
+}
+
+.file-note {
+  margin: 0;
+  padding: 0 var(--sp-3) var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-2);
+}
+
+.hunks {
+  border-block-start: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  line-height: 1.45;
+}
+
+.dl {
+  display: grid;
+  grid-template-columns: 1.5ch minmax(0, 1fr);
+  column-gap: var(--sp-2);
+  min-block-size: 1.45em;
+  padding: 0 var(--sp-3);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dl-mark { font-weight: 600; }
+
+.dl-text { min-inline-size: 0; }
+
+.dl-add { background: color-mix(in oklch, var(--done) 18%, var(--surface)); }
+
+.dl-del { background: color-mix(in oklch, var(--danger) 16%, var(--surface)); }
+
+.dl-hunk, .dl-note {
+  display: block;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.dl-empty { background: var(--surface-2); }
+
+.sbs-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.sbs-row > .dl + .dl { border-inline-start: 1px solid var(--border); }
+
+.sbs-span { grid-template-columns: minmax(0, 1fr); }
+
+/* ---- Previews ---- */
+
+.preview-list {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  list-style: none;
+}
+
+.preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--r-2);
+  background: var(--surface);
+}
+
+.preview-text {
+  display: grid;
+  min-inline-size: 0;
+}
+
+.preview-port { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.preview-process {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  overflow-wrap: anywhere;
+}
+
+/* ---- Usage ---- */
+
+.usage-machine { margin-block-end: var(--sp-5); }
+
+.usage-window { margin-block-end: var(--sp-4); }
+
+.usage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.usage-label { font-weight: 600; }
+
+.usage-percent { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.meter {
+  margin-block: var(--sp-2);
+  block-size: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  background: var(--surface-2);
+}
+
+.meter-fill {
+  block-size: 100%;
+  inline-size: calc(var(--pct, 0) * 1%);
+  border-radius: var(--r-pill);
+  background: var(--accent);
+}
+
+.usage-reset, .usage-read {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-2);
+  font-variant-numeric: tabular-nums;
+}
