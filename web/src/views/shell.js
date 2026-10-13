@@ -45,7 +45,8 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
     h("span", { class: "bars", "aria-hidden": "true" }));
   const title = h("h1", { class: "title", "data-test": "title" });
   const machineBadge = h("span", { class: "machine-badge", "data-test": "machine-badge", hidden: true });
-  const topbar = h("header", { class: "topbar" }, menuBtn, title, machineBadge);
+  const changesLink = h("a", { class: "top-link", "data-test": "changes-link", hidden: true }, copy.changes);
+  const topbar = h("header", { class: "topbar" }, menuBtn, title, machineBadge, changesLink);
   const notice = h("div", { class: "notice", role: "status", "data-test": "notice", hidden: true });
   const strip = createStrip({ fleet, setTimeout: setT, clearTimeout: clearT });
   const view = h("div", { class: "view", id: "view", "data-test": "view" });
@@ -192,6 +193,9 @@ export function createShell({ app, base, openStore, win = window, setTimeout: se
     title.textContent = text;
     title.title = text;
     machineBadge.textContent = route.machine ?? "";
+    const onSession = (route.view === "chat" || route.view === "term") && !!route.machine && !!route.sessionId;
+    changesLink.hidden = !onSession;
+    if (onSession) changesLink.setAttribute("href", href({ view: "changes", machine: route.machine, sessionId: route.sessionId }));
     machineBadge.hidden = !route.machine;
     doc.title = text ? `${text} · ${copy.appName}` : copy.appName;
   }

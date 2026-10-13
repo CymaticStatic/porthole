@@ -50,6 +50,22 @@
   font-size: var(--fs-2);
   overflow-wrap: anywhere;
 }
+.top-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-block-size: var(--tap);
+  min-inline-size: var(--tap);
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-1);
+  color: var(--accent);
+  font-size: var(--fs-3);
+  font-weight: 600;
+  text-decoration: none;
+}
+.top-link[hidden] { display: none; }
+.top-link:hover, .top-link:active { background: var(--surface-2); }
 .icon-btn {
   display: inline-grid;
   place-items: center;

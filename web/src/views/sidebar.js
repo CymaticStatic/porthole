@@ -224,6 +224,7 @@ export function createSidebar({ fleet, openList, onChoose }) {
       link(href({ view: "settings" }), { class: "row row-main", "data-fk": "settings", "data-test": "nav-settings" }, [h("span", { class: "row-name" }, copy.settings)]),
       link(href({ view: "usage" }), { class: "row row-main", "data-fk": "usage", "data-test": "nav-usage" }, [h("span", { class: "row-name" }, copy.usage)]),
       side.machines.map((m) => link(href({ view: "config", machine: m.name }), { class: "row row-main", "data-fk": `config|${m.name}`, "data-machine": m.name }, [h("span", { class: "row-name" }, copy.configFor(m.name))])),
+      side.machines.map((m) => link(href({ view: "previews", machine: m.name }), { class: "row row-main", "data-fk": `previews|${m.name}`, "data-test": "nav-previews", "data-machine": m.name }, [h("span", { class: "row-name" }, copy.previewsFor(m.name))])),
     ));
     return out;
   }

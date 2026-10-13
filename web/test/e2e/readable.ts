@@ -40,7 +40,9 @@ const CHECK = String.raw`((SEL) => {
       const limit = el.closest(".meta") ? 12 : 14;
       if (px + TOL < limit) problems.push("text smaller than " + limit + "px (" + px + "px): " + name(el));
     }
-    if ((cs.overflowX === "hidden" || cs.overflowY === "hidden" || cs.overflow === "hidden") && el.scrollWidth > el.clientWidth + 1) {
+    const r1 = el.getBoundingClientRect();
+    const visuallyHidden = r1.width <= 1 && r1.height <= 1; // the standard screen-reader-only box (.visually-hidden): clipped on purpose
+    if (!visuallyHidden && (cs.overflowX === "hidden" || cs.overflowY === "hidden" || cs.overflow === "hidden") && el.scrollWidth > el.clientWidth + 1) {
       const ellipsis = cs.textOverflow === "ellipsis" && el.hasAttribute("title");
       if (!ellipsis && !el.closest(".table-scroll")) problems.push("clipped content (scrollWidth " + el.scrollWidth + " > clientWidth " + el.clientWidth + "): " + name(el));
     }
@@ -51,6 +53,7 @@ const CHECK = String.raw`((SEL) => {
     if (!rendered(el)) continue;
     const r = el.getBoundingClientRect();
     if (r.width <= 1 && r.height <= 1) continue; // visually hidden control (its visible stand-in is checked on its own)
+    if (getComputedStyle(el).opacity === "0") continue; // an invisible control (xterm's input box): nobody taps it
     if (el.tagName === "A" && getComputedStyle(el).display === "inline") {
       const p = el.parentElement;
       if (p && (p.textContent || "").trim() !== (el.textContent || "").trim()) continue; // a link inside a sentence
